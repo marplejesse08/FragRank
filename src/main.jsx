@@ -6,6 +6,7 @@ import {
   Award,
   BarChart3,
   Bell,
+  ChevronLeft,
   ChevronRight,
   Crown,
   Gamepad2,
@@ -18,6 +19,7 @@ import {
   Settings,
   Shield,
   Swords,
+  Target,
   Trophy,
   User,
   Users,
@@ -56,7 +58,7 @@ function shortGameName(name = '') {
 
   return name
     .split(' ')
-    .map(word => word[0])
+    .map((word) => word[0])
     .join('')
     .slice(0, 5)
     .toUpperCase();
@@ -113,8 +115,6 @@ async function updateMyProfile(user, updates) {
 async function getMyGameStats(user) {
   if (!user) return [];
 
-  console.log('Loading stats for user:', user.id);
-
   const {
     data: statRows,
     error: statsError
@@ -139,8 +139,6 @@ async function getMyGameStats(user) {
     throw statsError;
   }
 
-  console.log('game_stats rows:', statRows);
-
   if (!statRows || statRows.length === 0) {
     return [];
   }
@@ -148,7 +146,7 @@ async function getMyGameStats(user) {
   const gameIds = [
     ...new Set(
       statRows
-        .map(row => row.game_id)
+        .map((row) => row.game_id)
         .filter(Boolean)
     )
   ];
@@ -166,57 +164,36 @@ async function getMyGameStats(user) {
     throw gamesError;
   }
 
-  console.log('games rows:', gameRows);
-
   const gameMap = {};
 
   for (const game of gameRows || []) {
     gameMap[String(game.id)] = game;
   }
 
-  return statRows.map(row => {
+  return statRows.map((row) => {
     const game =
-      gameMap[String(row.game_id)] ||
-      {
+      gameMap[String(row.game_id)] || {
         id: row.game_id,
         name: `Game ${row.game_id}`
       };
 
-    const gamesPlayed =
-      number(row.games_played);
-
-    const wins =
-      number(row.wins);
-
-    const kills =
-      number(row.kills);
-
-    const deaths =
-      number(row.deaths);
+    const gamesPlayed = number(row.games_played);
+    const wins = number(row.wins);
+    const kills = number(row.kills);
+    const deaths = number(row.deaths);
 
     return {
       id: row.id,
+      gameId: row.game_id,
 
-      gameId:
-        row.game_id,
+      name: game.name,
+      short: shortGameName(game.name),
 
-      name:
-        game.name,
-
-      short:
-        shortGameName(game.name),
-
-      games:
-        gamesPlayed,
-
+      games: gamesPlayed,
       wins,
-
       kills,
-
       deaths,
-
-      headshots:
-        number(row.headshots),
+      headshots: number(row.headshots),
 
       winRate:
         gamesPlayed > 0
@@ -233,8 +210,7 @@ async function getMyGameStats(user) {
           ? kills / deaths
           : kills,
 
-      updatedAt:
-        row.updated_at
+      updatedAt: row.updated_at
     };
   });
 }
@@ -281,30 +257,20 @@ function calculateTotals(gameStats) {
 
 
 /* =========================
-   AUTH SCREEN
+   AUTH
 ========================= */
 
 function Auth() {
-  const [mode, setMode] =
-    useState('login');
+  const [mode, setMode] = useState('login');
 
-  const [email, setEmail] =
-    useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
-  const [password, setPassword] =
-    useState('');
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
 
-  const [username, setUsername] =
-    useState('');
-
-  const [displayName, setDisplayName] =
-    useState('');
-
-  const [busy, setBusy] =
-    useState(false);
-
-  const [msg, setMsg] =
-    useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
 
   async function submit(e) {
     e.preventDefault();
@@ -314,10 +280,7 @@ function Auth() {
 
     try {
       if (mode === 'login') {
-        await signIn(
-          email,
-          password
-        );
+        await signIn(email, password);
       } else {
         await signUp({
           email,
@@ -344,7 +307,6 @@ function Auth() {
 
   return (
     <div className="auth-page">
-
       <div className="auth-card">
 
         <div className="brand-mark">
@@ -380,7 +342,7 @@ function Auth() {
 
                 <input
                   value={username}
-                  onChange={e =>
+                  onChange={(e) =>
                     setUsername(e.target.value)
                   }
                   required
@@ -392,7 +354,7 @@ function Auth() {
 
                 <input
                   value={displayName}
-                  onChange={e =>
+                  onChange={(e) =>
                     setDisplayName(e.target.value)
                   }
                 />
@@ -406,7 +368,7 @@ function Auth() {
             <input
               type="email"
               value={email}
-              onChange={e =>
+              onChange={(e) =>
                 setEmail(e.target.value)
               }
               required
@@ -420,7 +382,7 @@ function Auth() {
               type="password"
               minLength="6"
               value={password}
-              onChange={e =>
+              onChange={(e) =>
                 setPassword(e.target.value)
               }
               required
@@ -464,7 +426,6 @@ function Auth() {
         </button>
 
       </div>
-
     </div>
   );
 }
@@ -489,6 +450,7 @@ function Stat({
 
       <div>
         <span>{label}</span>
+
         <b>{value}</b>
 
         {sub && (
@@ -502,7 +464,7 @@ function Stat({
 
 
 /* =========================
-   TEMPORARY CHART
+   CHART
 ========================= */
 
 function Chart() {
@@ -519,11 +481,8 @@ function Chart() {
     6.87
   ];
 
-  const max =
-    Math.max(...vals);
-
-  const min =
-    Math.min(...vals);
+  const max = Math.max(...vals);
+  const min = Math.min(...vals);
 
   return (
     <div className="chart">
@@ -531,12 +490,10 @@ function Chart() {
       <div className="bars">
 
         {vals.map((value, index) => (
-
           <div
             className="barwrap"
             key={index}
           >
-
             <div
               className="bar"
               style={{
@@ -548,9 +505,7 @@ function Chart() {
                 }%`
               }}
             />
-
           </div>
-
         ))}
 
       </div>
@@ -576,6 +531,7 @@ function Chart() {
 
 function Dashboard({
   setPage,
+  openGame,
   user,
   profile,
   totals,
@@ -596,7 +552,6 @@ function Dashboard({
       <div className="page-head">
 
         <div>
-
           <div className="eyebrow">
             PLAYER DASHBOARD
           </div>
@@ -614,7 +569,6 @@ function Dashboard({
           <p>
             Here’s your competitive snapshot.
           </p>
-
         </div>
 
         <button
@@ -755,7 +709,7 @@ function Dashboard({
             </h2>
 
             <span>
-              Live game records
+              Tap a game for detailed statistics
             </span>
           </div>
 
@@ -788,43 +742,54 @@ function Dashboard({
 
           <div className="gamegrid">
 
-            {gameStats.map(game => (
+            {gameStats.map((game) => (
 
-              <div
-                className="gamecard"
+              <button
                 key={game.id}
+                onClick={() =>
+                  openGame(game)
+                }
+                style={{
+                  all: 'unset',
+                  cursor: 'pointer',
+                  display: 'block'
+                }}
               >
 
-                <div className="glogo">
-                  {game.short}
+                <div className="gamecard">
+
+                  <div className="glogo">
+                    {game.short}
+                  </div>
+
+                  <div>
+
+                    <b>
+                      {game.name}
+                    </b>
+
+                    <small>
+                      {formatNumber(game.games)} games •{' '}
+                      {formatNumber(game.wins)} wins
+                    </small>
+
+                  </div>
+
+                  <div className="kpg">
+
+                    <b>
+                      {formatDecimal(game.kpg)}
+                    </b>
+
+                    <small>
+                      KPG
+                    </small>
+
+                  </div>
+
                 </div>
 
-                <div>
-
-                  <b>
-                    {game.name}
-                  </b>
-
-                  <small>
-                    {formatNumber(game.games)} games •{' '}
-                    {formatNumber(game.wins)} wins
-                  </small>
-
-                </div>
-
-                <div className="kpg">
-
-                  <b>
-                    {formatDecimal(game.kpg)}
-                  </b>
-
-                  <small>
-                    KPG
-                  </small>
-
-                </div>
-
-              </div>
+              </button>
 
             ))}
 
@@ -840,13 +805,14 @@ function Dashboard({
 
 
 /* =========================
-   STATS PAGE
+   FULL STATS PAGE
 ========================= */
 
 function Stats({
   totals,
   gameStats,
-  statsLoading
+  statsLoading,
+  openGame
 }) {
   return (
     <div className="page">
@@ -854,7 +820,6 @@ function Stats({
       <div className="page-head">
 
         <div>
-
           <div className="eyebrow">
             ANALYTICS
           </div>
@@ -864,9 +829,8 @@ function Stats({
           </h1>
 
           <p>
-            Live statistics from Supabase.
+            Tap a game to view detailed statistics.
           </p>
-
         </div>
 
       </div>
@@ -924,7 +888,7 @@ function Stats({
           </h2>
 
           <span>
-            Supabase
+            Tap any game
           </span>
 
         </div>
@@ -960,12 +924,22 @@ function Stats({
 
               ) : (
 
-                gameStats.map(game => (
+                gameStats.map((game) => (
 
-                  <tr key={game.id}>
+                  <tr
+                    key={game.id}
+                    onClick={() =>
+                      openGame(game)
+                    }
+                    style={{
+                      cursor: 'pointer'
+                    }}
+                  >
 
                     <td>
-                      <b>{game.name}</b>
+                      <b>
+                        {game.name}
+                      </b>
                     </td>
 
                     <td>
@@ -1016,7 +990,280 @@ function Stats({
 
 
 /* =========================
-   EDIT PROFILE
+   INDIVIDUAL GAME PAGE
+========================= */
+
+function GameDetail({
+  game,
+  back
+}) {
+  if (!game) {
+    return null;
+  }
+
+  return (
+    <div className="page">
+
+      <div className="page-head">
+
+        <div>
+
+          <button
+            className="linkbtn"
+            onClick={back}
+            style={{
+              marginBottom: '18px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px'
+            }}
+          >
+            <ChevronLeft size={18} />
+
+            Back to My Stats
+          </button>
+
+          <div className="eyebrow">
+            GAME DETAILS
+          </div>
+
+          <h1>
+            {game.name}
+          </h1>
+
+          <p>
+            Your FragRank performance for {game.name}.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <section
+        className="panel"
+        style={{
+          marginBottom: '18px'
+        }}
+      >
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '18px'
+          }}
+        >
+
+          <div
+            className="glogo"
+            style={{
+              width: '72px',
+              height: '72px',
+              fontSize: '16px'
+            }}
+          >
+            {game.short}
+          </div>
+
+          <div>
+
+            <div className="eyebrow">
+              CONNECTED GAME
+            </div>
+
+            <h2
+              style={{
+                margin: '6px 0'
+              }}
+            >
+              {game.name}
+            </h2>
+
+            <span className="muted">
+              Live stats from Supabase
+            </span>
+
+          </div>
+
+        </div>
+
+      </section>
+
+
+      <div className="stats">
+
+        <Stat
+          icon={Gamepad2}
+          label="Games Played"
+          value={formatNumber(game.games)}
+        />
+
+        <Stat
+          icon={Trophy}
+          label="Wins"
+          value={formatNumber(game.wins)}
+          sub={`${game.winRate.toFixed(1)}% win rate`}
+        />
+
+        <Stat
+          icon={Swords}
+          label="Kills"
+          value={formatNumber(game.kills)}
+        />
+
+        <Stat
+          icon={Shield}
+          label="Deaths"
+          value={formatNumber(game.deaths)}
+        />
+
+      </div>
+
+
+      <div className="stats">
+
+        <Stat
+          icon={Target}
+          label="K/D"
+          value={formatDecimal(game.kd)}
+        />
+
+        <Stat
+          icon={Zap}
+          label="Kills / Game"
+          value={formatDecimal(game.kpg)}
+        />
+
+        <Stat
+          icon={Target}
+          label="Headshots"
+          value={formatNumber(game.headshots)}
+        />
+
+        <Stat
+          icon={Trophy}
+          label="Win Rate"
+          value={`${game.winRate.toFixed(1)}%`}
+        />
+
+      </div>
+
+
+      <section className="panel">
+
+        <div className="panel-head">
+
+          <div>
+
+            <h2>
+              Performance Summary
+            </h2>
+
+            <span>
+              Current stored statistics
+            </span>
+
+          </div>
+
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gap: '16px'
+          }}
+        >
+
+          <div className="gamecard">
+
+            <div className="stat-icon">
+              <Gamepad2 size={20} />
+            </div>
+
+            <div>
+              <b>
+                Matches
+              </b>
+
+              <small>
+                {formatNumber(game.games)} games played
+              </small>
+            </div>
+
+          </div>
+
+
+          <div className="gamecard">
+
+            <div className="stat-icon">
+              <Trophy size={20} />
+            </div>
+
+            <div>
+              <b>
+                Victories
+              </b>
+
+              <small>
+                {formatNumber(game.wins)} wins •{' '}
+                {game.winRate.toFixed(1)}% win rate
+              </small>
+            </div>
+
+          </div>
+
+
+          <div className="gamecard">
+
+            <div className="stat-icon">
+              <Swords size={20} />
+            </div>
+
+            <div>
+              <b>
+                Combat
+              </b>
+
+              <small>
+                {formatNumber(game.kills)} kills •{' '}
+                {formatNumber(game.deaths)} deaths •{' '}
+                {formatDecimal(game.kd)} K/D
+              </small>
+            </div>
+
+          </div>
+
+
+          <div className="gamecard">
+
+            <div className="stat-icon">
+              <Target size={20} />
+            </div>
+
+            <div>
+              <b>
+                Accuracy Milestone
+              </b>
+
+              <small>
+                {formatNumber(game.headshots)} headshots recorded
+              </small>
+            </div>
+
+          </div>
+
+        </div>
+
+      </section>
+
+    </div>
+  );
+}
+
+
+/* =========================
+   PROFILE SETTINGS
 ========================= */
 
 function ProfileSettings({
@@ -1091,7 +1338,6 @@ function ProfileSettings({
       <div className="page-head">
 
         <div>
-
           <div className="eyebrow">
             PLAYER PROFILE
           </div>
@@ -1103,7 +1349,6 @@ function ProfileSettings({
           <p>
             Customize your FragRank identity.
           </p>
-
         </div>
 
       </div>
@@ -1133,7 +1378,7 @@ function ProfileSettings({
 
             <input
               value={displayName}
-              onChange={e =>
+              onChange={(e) =>
                 setDisplayName(e.target.value)
               }
               maxLength={40}
@@ -1145,7 +1390,7 @@ function ProfileSettings({
 
             <input
               value={title}
-              onChange={e =>
+              onChange={(e) =>
                 setTitle(e.target.value)
               }
               maxLength={40}
@@ -1158,7 +1403,7 @@ function ProfileSettings({
 
             <input
               value={bio}
-              onChange={e =>
+              onChange={(e) =>
                 setBio(e.target.value)
               }
               maxLength={160}
@@ -1206,7 +1451,6 @@ function Foundation({
       <div className="page-head">
 
         <div>
-
           <div className="eyebrow">
             FRAGRANK V2
           </div>
@@ -1218,7 +1462,6 @@ function Foundation({
           <p>
             {description}
           </p>
-
         </div>
 
       </div>
@@ -1232,8 +1475,7 @@ function Foundation({
         </h2>
 
         <p>
-          This feature will be connected to live Supabase data
-          during the next development phases.
+          This feature will be connected to live Supabase data during the next development phases.
         </p>
 
       </section>
@@ -1244,7 +1486,7 @@ function Foundation({
 
 
 /* =========================
-   APP
+   MAIN APP
 ========================= */
 
 function App() {
@@ -1269,6 +1511,9 @@ function App() {
   const [page, setPage] =
     useState('dashboard');
 
+  const [selectedGame, setSelectedGame] =
+    useState(null);
+
   const [open, setOpen] =
     useState(false);
 
@@ -1288,11 +1533,6 @@ function App() {
       const playerStats =
         await getMyGameStats(user);
 
-      console.log(
-        'Final FragRank stats:',
-        playerStats
-      );
-
       setGameStats(playerStats);
 
     } catch (error) {
@@ -1311,6 +1551,28 @@ function App() {
     } finally {
       setStatsLoading(false);
     }
+  }
+
+
+  function openGame(game) {
+    setSelectedGame(game);
+    setPage('game-detail');
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  }
+
+
+  function closeGame() {
+    setSelectedGame(null);
+    setPage('stats');
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   }
 
 
@@ -1435,9 +1697,11 @@ function App() {
 
 
   const pages = {
+
     dashboard: (
       <Dashboard
         setPage={setPage}
+        openGame={openGame}
         user={session.user}
         profile={profile}
         totals={totals}
@@ -1460,6 +1724,14 @@ function App() {
         totals={totals}
         gameStats={gameStats}
         statsLoading={statsLoading}
+        openGame={openGame}
+      />
+    ),
+
+    'game-detail': (
+      <GameDetail
+        game={selectedGame}
+        back={closeGame}
       />
     ),
 
@@ -1518,6 +1790,7 @@ function App() {
         description="Posts, clips, reactions, comments, and player activity."
       />
     )
+
   };
 
 
@@ -1571,6 +1844,7 @@ function App() {
                 }
                 onClick={() => {
                   setPage(id);
+                  setSelectedGame(null);
                   setOpen(false);
                 }}
               >
@@ -1656,9 +1930,10 @@ function App() {
 
             <button
               className="iconbtn"
-              onClick={() =>
-                setPage('profile')
-              }
+              onClick={() => {
+                setPage('profile');
+                setSelectedGame(null);
+              }}
             >
               <Settings size={18} />
             </button>
