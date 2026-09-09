@@ -1,6 +1,6 @@
 {
-  "name": "fragrank-web",
-  "version": "1.0.0",
+  "name": "fragrank-v2",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "dev": "vite",
@@ -8,10 +8,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "vite": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "lucide-react": "latest",
-    "@supabase/supabase-js": "^2.57.0"
+    "@supabase/supabase-js": "^2.57.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
   }
 }
