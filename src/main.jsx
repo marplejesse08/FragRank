@@ -2846,12 +2846,3 @@ function App() {
       </main>
 
     </div>
-  );
-}
-
-
-createRoot(
-  document.getElementById('root')
-).render(
-  <App />
-);
