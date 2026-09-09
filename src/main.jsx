@@ -13,11 +13,13 @@ import {
   Home,
   LogOut,
   Menu,
+  Save,
   Search,
   Settings,
   Shield,
   Swords,
   Trophy,
+  User,
   UserPlus,
   Users,
   X,
@@ -27,6 +29,7 @@ import {
 import { supabase } from './supabase';
 import { signIn, signOut, signUp } from './auth';
 import './styles.css';
+
 
 /* =========================================================
    HELPERS
@@ -60,6 +63,7 @@ function shortGameName(name = '') {
     .toUpperCase();
 }
 
+
 /* =========================================================
    SUPABASE PROFILE
 ========================================================= */
@@ -80,6 +84,33 @@ async function getMyProfile(user) {
 
   return data;
 }
+
+
+async function updateMyProfile(user, updates) {
+  if (!user) {
+    throw new Error('You must be signed in.');
+  }
+
+  const cleanUpdates = {
+    display_name: updates.display_name?.trim() || null,
+    bio: updates.bio?.trim() || null,
+    title: updates.title?.trim() || null
+  };
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(cleanUpdates)
+    .eq('id', user.id)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
 
 /* =========================================================
    SUPABASE GAME STATS
@@ -119,41 +150,73 @@ async function getMyGameStats(user) {
     return {
       id: row.id,
       gameId: row.game?.id,
-      name: row.game?.name || 'Unknown Game',
-      short: shortGameName(row.game?.name || 'Game'),
-      games: gamesPlayed,
+
+      name:
+        row.game?.name ||
+        'Unknown Game',
+
+      short:
+        shortGameName(
+          row.game?.name ||
+          'Game'
+        ),
+
+      games:
+        gamesPlayed,
+
       wins,
+
       kills,
+
       deaths,
-      headshots: number(row.headshots),
+
+      headshots:
+        number(row.headshots),
+
       winRate:
         gamesPlayed > 0
           ? (wins / gamesPlayed) * 100
           : 0,
+
       kpg:
         gamesPlayed > 0
           ? kills / gamesPlayed
           : 0,
+
       kd:
         deaths > 0
           ? kills / deaths
           : kills,
-      updatedAt: row.updated_at
+
+      updatedAt:
+        row.updated_at
     };
   });
 }
 
+
 function calculateTotals(gameStats) {
   const totals = gameStats.reduce(
     (result, game) => {
-      result.games += number(game.games);
-      result.wins += number(game.wins);
-      result.kills += number(game.kills);
-      result.deaths += number(game.deaths);
-      result.headshots += number(game.headshots);
+
+      result.games +=
+        number(game.games);
+
+      result.wins +=
+        number(game.wins);
+
+      result.kills +=
+        number(game.kills);
+
+      result.deaths +=
+        number(game.deaths);
+
+      result.headshots +=
+        number(game.headshots);
 
       return result;
     },
+
     {
       games: 0,
       wins: 0,
@@ -168,36 +231,51 @@ function calculateTotals(gameStats) {
 
     winRate:
       totals.games > 0
-        ? (totals.wins / totals.games) * 100
+        ? (totals.wins /
+            totals.games) *
+          100
         : 0,
 
     kpg:
       totals.games > 0
-        ? totals.kills / totals.games
+        ? totals.kills /
+          totals.games
         : 0,
 
     kd:
       totals.deaths > 0
-        ? totals.kills / totals.deaths
+        ? totals.kills /
+          totals.deaths
         : totals.kills
   };
 }
+
 
 /* =========================================================
    AUTH
 ========================================================= */
 
 function Auth() {
-  const [mode, setMode] = useState('login');
+  const [mode, setMode] =
+    useState('login');
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] =
+    useState('');
 
-  const [username, setUsername] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] =
+    useState('');
 
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState('');
+  const [username, setUsername] =
+    useState('');
+
+  const [displayName, setDisplayName] =
+    useState('');
+
+  const [busy, setBusy] =
+    useState(false);
+
+  const [msg, setMsg] =
+    useState('');
 
   async function submit(e) {
     e.preventDefault();
@@ -206,9 +284,16 @@ function Auth() {
     setMsg('');
 
     try {
+
       if (mode === 'login') {
-        await signIn(email, password);
+
+        await signIn(
+          email,
+          password
+        );
+
       } else {
+
         await signUp({
           email,
           password,
@@ -222,15 +307,23 @@ function Auth() {
 
         setMode('login');
       }
+
     } catch (err) {
-      setMsg(err.message || 'Something went wrong.');
+
+      setMsg(
+        err.message ||
+        'Something went wrong.'
+      );
+
     } finally {
+
       setBusy(false);
     }
   }
 
   return (
     <div className="auth-page">
+
       <div className="auth-card">
 
         <div className="brand-mark">
@@ -261,13 +354,16 @@ function Auth() {
 
           {mode === 'signup' && (
             <>
+
               <label>
                 Username
 
                 <input
                   value={username}
                   onChange={(e) =>
-                    setUsername(e.target.value)
+                    setUsername(
+                      e.target.value
+                    )
                   }
                   required
                 />
@@ -279,10 +375,13 @@ function Auth() {
                 <input
                   value={displayName}
                   onChange={(e) =>
-                    setDisplayName(e.target.value)
+                    setDisplayName(
+                      e.target.value
+                    )
                   }
                 />
               </label>
+
             </>
           )}
 
@@ -293,7 +392,9 @@ function Auth() {
               type="email"
               value={email}
               onChange={(e) =>
-                setEmail(e.target.value)
+                setEmail(
+                  e.target.value
+                )
               }
               required
             />
@@ -307,7 +408,9 @@ function Auth() {
               minLength="6"
               value={password}
               onChange={(e) =>
-                setPassword(e.target.value)
+                setPassword(
+                  e.target.value
+                )
               }
               required
             />
@@ -348,9 +451,11 @@ function Auth() {
         </button>
 
       </div>
+
     </div>
   );
 }
+
 
 /* =========================================================
    STAT CARD
@@ -370,24 +475,30 @@ function Stat({
       </div>
 
       <div>
-        <span>{label}</span>
 
-        <b>{value}</b>
+        <span>
+          {label}
+        </span>
+
+        <b>
+          {value}
+        </b>
 
         {sub && (
-          <small>{sub}</small>
+          <small>
+            {sub}
+          </small>
         )}
+
       </div>
 
     </div>
   );
 }
 
-/* =========================================================
-   TREND CHART
 
-   Historical chart is still placeholder data until we
-   store historical game-stat snapshots.
+/* =========================================================
+   KPG CHART
 ========================================================= */
 
 function Chart() {
@@ -404,8 +515,11 @@ function Chart() {
     6.87
   ];
 
-  const max = Math.max(...vals);
-  const min = Math.min(...vals);
+  const max =
+    Math.max(...vals);
+
+  const min =
+    Math.min(...vals);
 
   return (
     <div className="chart">
@@ -413,10 +527,12 @@ function Chart() {
       <div className="bars">
 
         {vals.map((v, i) => (
+
           <div
             className="barwrap"
             key={i}
           >
+
             <div
               className="bar"
               style={{
@@ -427,21 +543,30 @@ function Chart() {
                     68
                 }%`
               }}
-              title={`${v} KPG`}
             />
+
           </div>
+
         ))}
 
       </div>
 
       <div className="axis">
-        <span>10 games ago</span>
-        <span>Recent</span>
+
+        <span>
+          10 games ago
+        </span>
+
+        <span>
+          Recent
+        </span>
+
       </div>
 
     </div>
   );
 }
+
 
 /* =========================================================
    DASHBOARD
@@ -455,11 +580,14 @@ function Dashboard({
   gameStats,
   statsLoading
 }) {
+
   const playerName =
     profile?.display_name ||
     profile?.username ||
-    user?.user_metadata?.display_name ||
-    user?.user_metadata?.username ||
+    user?.user_metadata
+      ?.display_name ||
+    user?.user_metadata
+      ?.username ||
     'Player';
 
   return (
@@ -473,7 +601,15 @@ function Dashboard({
             PLAYER DASHBOARD
           </div>
 
-          <h1>{playerName}</h1>
+          <h1>
+            {playerName}
+          </h1>
+
+          {profile?.title && (
+            <div className="pill">
+              {profile.title}
+            </div>
+          )}
 
           <p>
             Here’s your competitive snapshot.
@@ -495,9 +631,9 @@ function Dashboard({
       </div>
 
       <div className="demo-note">
-        Your profile and stored game statistics are now connected
-        to Supabase. Rank, streak, and the performance-history
-        chart will be connected in a later step.
+        Your profile and stored game
+        statistics are connected to
+        Supabase.
       </div>
 
       <div className="stats">
@@ -508,7 +644,9 @@ function Dashboard({
           value={
             statsLoading
               ? '...'
-              : formatNumber(totals.games)
+              : formatNumber(
+                  totals.games
+                )
           }
           sub="Stored in Supabase"
         />
@@ -519,9 +657,13 @@ function Dashboard({
           value={
             statsLoading
               ? '...'
-              : `${totals.winRate.toFixed(1)}%`
+              : `${totals.winRate.toFixed(
+                  1
+                )}%`
           }
-          sub={`${formatNumber(totals.wins)} wins`}
+          sub={`${formatNumber(
+            totals.wins
+          )} wins`}
         />
 
         <Stat
@@ -530,9 +672,13 @@ function Dashboard({
           value={
             statsLoading
               ? '...'
-              : formatNumber(totals.kills)
+              : formatNumber(
+                  totals.kills
+                )
           }
-          sub={`${formatNumber(totals.deaths)} deaths`}
+          sub={`${formatNumber(
+            totals.deaths
+          )} deaths`}
         />
 
         <Stat
@@ -541,9 +687,13 @@ function Dashboard({
           value={
             statsLoading
               ? '...'
-              : formatDecimal(totals.kpg)
+              : formatDecimal(
+                  totals.kpg
+                )
           }
-          sub={`K/D ${formatDecimal(totals.kd)}`}
+          sub={`K/D ${formatDecimal(
+            totals.kd
+          )}`}
         />
 
       </div>
@@ -555,17 +705,21 @@ function Dashboard({
           <div className="panel-head">
 
             <div>
+
               <h2>
                 Kills per Game
               </h2>
 
               <span>
-                Historical trend placeholder
+                Historical chart placeholder
               </span>
+
             </div>
 
             <span className="pill">
-              {formatDecimal(totals.kpg)} KPG
+              {formatDecimal(
+                totals.kpg
+              )} KPG
             </span>
 
           </div>
@@ -589,18 +743,23 @@ function Dashboard({
           </h2>
 
           <div className="progress">
-            <i style={{ width: '0%' }} />
+            <i
+              style={{
+                width: '0%'
+              }}
+            />
           </div>
 
           <div className="progress-label">
-            <span>0 XP</span>
-            <span>Rank system next</span>
-          </div>
 
-          <div className="streak">
-            <Zap size={17} />
+            <span>
+              0 XP
+            </span>
 
-            Streak tracking coming
+            <span>
+              Rank system next
+            </span>
+
           </div>
 
         </section>
@@ -612,13 +771,15 @@ function Dashboard({
         <div className="panel-head">
 
           <div>
+
             <h2>
               Game Performance
             </h2>
 
             <span>
-              Stats stored for each connected game
+              Stored stats for each game
             </span>
+
           </div>
 
           <button
@@ -635,15 +796,21 @@ function Dashboard({
         </div>
 
         {statsLoading ? (
+
           <p className="muted">
             Loading game statistics…
           </p>
+
         ) : gameStats.length === 0 ? (
+
           <p className="muted">
-            No game stats have been added to your FragRank
+            No game stats have been
+            added to your FragRank
             account yet.
           </p>
+
         ) : (
+
           <div className="gamegrid">
 
             {gameStats.map((g) => (
@@ -664,8 +831,12 @@ function Dashboard({
                   </b>
 
                   <small>
-                    {formatNumber(g.games)} games •{' '}
-                    {formatNumber(g.wins)} wins
+                    {formatNumber(
+                      g.games
+                    )} games •{' '}
+                    {formatNumber(
+                      g.wins
+                    )} wins
                   </small>
 
                 </div>
@@ -673,7 +844,9 @@ function Dashboard({
                 <div className="kpg">
 
                   <b>
-                    {formatDecimal(g.kpg)}
+                    {formatDecimal(
+                      g.kpg
+                    )}
                   </b>
 
                   <small>
@@ -687,6 +860,7 @@ function Dashboard({
             ))}
 
           </div>
+
         )}
 
       </section>
@@ -695,8 +869,287 @@ function Dashboard({
   );
 }
 
+
 /* =========================================================
-   STATS PAGE
+   PROFILE SETTINGS
+========================================================= */
+
+function ProfileSettings({
+  user,
+  profile,
+  onProfileUpdated
+}) {
+
+  const [displayName, setDisplayName] =
+    useState(
+      profile?.display_name ||
+      ''
+    );
+
+  const [bio, setBio] =
+    useState(
+      profile?.bio ||
+      ''
+    );
+
+  const [title, setTitle] =
+    useState(
+      profile?.title ||
+      ''
+    );
+
+  const [saving, setSaving] =
+    useState(false);
+
+  const [message, setMessage] =
+    useState('');
+
+  useEffect(() => {
+
+    setDisplayName(
+      profile?.display_name ||
+      ''
+    );
+
+    setBio(
+      profile?.bio ||
+      ''
+    );
+
+    setTitle(
+      profile?.title ||
+      ''
+    );
+
+  }, [profile]);
+
+
+  async function saveProfile(e) {
+    e.preventDefault();
+
+    setSaving(true);
+    setMessage('');
+
+    try {
+
+      const updated =
+        await updateMyProfile(
+          user,
+          {
+            display_name:
+              displayName,
+
+            bio,
+
+            title
+          }
+        );
+
+      onProfileUpdated(
+        updated
+      );
+
+      setMessage(
+        'Profile saved successfully.'
+      );
+
+    } catch (error) {
+
+      console.error(
+        'Could not update profile:',
+        error
+      );
+
+      setMessage(
+        error.message ||
+        'Could not save profile.'
+      );
+
+    } finally {
+
+      setSaving(false);
+    }
+  }
+
+
+  return (
+    <div className="page">
+
+      <div className="page-head">
+
+        <div>
+
+          <div className="eyebrow">
+            PLAYER PROFILE
+          </div>
+
+          <h1>
+            Edit Profile
+          </h1>
+
+          <p>
+            Customize how other players
+            see you on FragRank.
+          </p>
+
+        </div>
+
+      </div>
+
+      <section
+        className="panel"
+        style={{
+          maxWidth: '700px'
+        }}
+      >
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '16px',
+            alignItems: 'center',
+            marginBottom: '25px'
+          }}
+        >
+
+          <div
+            className="avatar"
+            style={{
+              width: '64px',
+              height: '64px',
+              fontSize: '24px'
+            }}
+          >
+            {(
+              displayName ||
+              profile?.username ||
+              'P'
+            )
+              .charAt(0)
+              .toUpperCase()}
+          </div>
+
+          <div>
+
+            <b
+              style={{
+                fontSize: '20px'
+              }}
+            >
+              {profile?.username ||
+                'Player'}
+            </b>
+
+            <div className="muted">
+              @{profile?.username ||
+                'player'}
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <form
+          onSubmit={saveProfile}
+        >
+
+          <label>
+            Username
+
+            <input
+              value={
+                profile?.username ||
+                ''
+              }
+              disabled
+            />
+          </label>
+
+          <label>
+            Display Name
+
+            <input
+              value={displayName}
+              maxLength={40}
+              onChange={(e) =>
+                setDisplayName(
+                  e.target.value
+                )
+              }
+              placeholder="Your display name"
+            />
+          </label>
+
+          <label>
+            Player Title
+
+            <input
+              value={title}
+              maxLength={40}
+              onChange={(e) =>
+                setTitle(
+                  e.target.value
+                )
+              }
+              placeholder="Example: Headshot Hunter"
+            />
+          </label>
+
+          <label>
+            Bio
+
+            <input
+              value={bio}
+              maxLength={160}
+              onChange={(e) =>
+                setBio(
+                  e.target.value
+                )
+              }
+              placeholder="Tell players about yourself"
+            />
+          </label>
+
+
+          {message && (
+
+            <div
+              className="notice"
+              style={{
+                marginBottom: '15px'
+              }}
+            >
+              {message}
+            </div>
+
+          )}
+
+
+          <button
+            className="primary"
+            disabled={saving}
+          >
+
+            <Save size={17} />
+
+            {saving
+              ? 'Saving…'
+              : 'Save Profile'}
+
+          </button>
+
+        </form>
+
+      </section>
+
+    </div>
+  );
+}
+
+
+/* =========================================================
+   STATS
 ========================================================= */
 
 function Stats({
@@ -704,6 +1157,7 @@ function Stats({
   gameStats,
   statsLoading
 }) {
+
   return (
     <div className="page">
 
@@ -720,7 +1174,8 @@ function Stats({
           </h1>
 
           <p>
-            Your stored Supabase statistics by game.
+            Your stored statistics by
+            game.
           </p>
 
         </div>
@@ -735,7 +1190,9 @@ function Stats({
           value={
             statsLoading
               ? '...'
-              : formatNumber(totals.games)
+              : formatNumber(
+                  totals.games
+                )
           }
         />
 
@@ -745,7 +1202,9 @@ function Stats({
           value={
             statsLoading
               ? '...'
-              : formatNumber(totals.wins)
+              : formatNumber(
+                  totals.wins
+                )
           }
         />
 
@@ -755,7 +1214,9 @@ function Stats({
           value={
             statsLoading
               ? '...'
-              : formatDecimal(totals.kd)
+              : formatDecimal(
+                  totals.kd
+                )
           }
         />
 
@@ -765,7 +1226,9 @@ function Stats({
           value={
             statsLoading
               ? '...'
-              : formatDecimal(totals.kpg)
+              : formatDecimal(
+                  totals.kpg
+                )
           }
         />
 
@@ -780,7 +1243,7 @@ function Stats({
           </h2>
 
           <span>
-            Live data from your FragRank database
+            Live FragRank database
           </span>
 
         </div>
@@ -807,12 +1270,18 @@ function Stats({
             <tbody>
 
               {gameStats.length === 0 ? (
+
                 <tr>
+
                   <td colSpan="8">
-                    No game statistics have been stored yet.
+                    No game statistics
+                    have been stored yet.
                   </td>
+
                 </tr>
+
               ) : (
+
                 gameStats.map((g) => (
 
                   <tr
@@ -824,36 +1293,51 @@ function Stats({
                     </td>
 
                     <td>
-                      {formatNumber(g.games)}
+                      {formatNumber(
+                        g.games
+                      )}
                     </td>
 
                     <td>
-                      {formatNumber(g.wins)}
+                      {formatNumber(
+                        g.wins
+                      )}
                     </td>
 
                     <td>
-                      {g.winRate.toFixed(1)}%
+                      {g.winRate.toFixed(
+                        1
+                      )}%
                     </td>
 
                     <td>
-                      {formatNumber(g.kills)}
+                      {formatNumber(
+                        g.kills
+                      )}
                     </td>
 
                     <td>
-                      {formatNumber(g.deaths)}
+                      {formatNumber(
+                        g.deaths
+                      )}
                     </td>
 
                     <td>
-                      {formatDecimal(g.kd)}
+                      {formatDecimal(
+                        g.kd
+                      )}
                     </td>
 
                     <td className="accent">
-                      {formatDecimal(g.kpg)}
+                      {formatDecimal(
+                        g.kpg
+                      )}
                     </td>
 
                   </tr>
 
                 ))
+
               )}
 
             </tbody>
@@ -868,256 +1352,9 @@ function Stats({
   );
 }
 
-/* =========================================================
-   FRIENDS
-========================================================= */
-
-function Friends() {
-  const demoFriends = [
-    {
-      name: 'Nova',
-      rank: 'Diamond',
-      kpg: 7.41,
-      wins: 62,
-      online: true
-    },
-    {
-      name: 'Rogue',
-      rank: 'Platinum',
-      kpg: 6.98,
-      wins: 58,
-      online: true
-    },
-    {
-      name: 'Jett',
-      rank: 'Diamond',
-      kpg: 6.81,
-      wins: 55,
-      online: false
-    },
-    {
-      name: 'Vex',
-      rank: 'Gold',
-      kpg: 5.92,
-      wins: 47,
-      online: false
-    }
-  ];
-
-  const sorted = useMemo(
-    () =>
-      [...demoFriends].sort(
-        (a, b) =>
-          b.kpg - a.kpg
-      ),
-    []
-  );
-
-  return (
-    <div className="page">
-
-      <div className="page-head">
-
-        <div>
-
-          <div className="eyebrow">
-            SOCIAL
-          </div>
-
-          <h1>
-            Friends
-          </h1>
-
-          <p>
-            Friend data will be wired to Supabase next.
-          </p>
-
-        </div>
-
-        <button className="primary">
-          <UserPlus size={17} />
-
-          Add Friend
-        </button>
-
-      </div>
-
-      <section className="panel">
-
-        <div className="panel-head">
-
-          <h2>
-            Friend Leaderboard
-          </h2>
-
-          <span className="pill">
-            DEMO
-          </span>
-
-        </div>
-
-        {sorted.map((f, i) => (
-
-          <div
-            className="friend"
-            key={f.name}
-          >
-
-            <span>
-              #{i + 1}
-            </span>
-
-            <div className="avatar">
-              {f.name[0]}
-            </div>
-
-            <div>
-
-              <b>
-                {f.name}
-              </b>
-
-              <small>
-                {f.rank} •{' '}
-                {f.online
-                  ? 'Online'
-                  : 'Offline'}
-              </small>
-
-            </div>
-
-            <div className="metric">
-
-              <b>
-                {f.kpg}
-              </b>
-
-              <small>
-                KPG
-              </small>
-
-            </div>
-
-            <div className="metric">
-
-              <b>
-                {f.wins}
-              </b>
-
-              <small>
-                WINS
-              </small>
-
-            </div>
-
-          </div>
-
-        ))}
-
-      </section>
-
-    </div>
-  );
-}
 
 /* =========================================================
-   LEADERBOARD
-========================================================= */
-
-function Leaderboard() {
-  return (
-    <div className="page">
-
-      <div className="page-head">
-
-        <div>
-
-          <div className="eyebrow">
-            COMPETE
-          </div>
-
-          <h1>
-            Global Leaderboard
-          </h1>
-
-          <p>
-            Global leaderboard data will be wired to Supabase
-            after game stats are verified.
-          </p>
-
-        </div>
-
-      </div>
-
-      <section className="panel coming">
-
-        <Globe2 size={44} />
-
-        <h2>
-          Leaderboard foundation ready
-        </h2>
-
-        <p>
-          Once multiple players have stored statistics,
-          FragRank can calculate real rankings from those
-          database records.
-        </p>
-
-      </section>
-
-    </div>
-  );
-}
-
-/* =========================================================
-   ACHIEVEMENTS
-========================================================= */
-
-function Achievements() {
-  return (
-    <div className="page">
-
-      <div className="page-head">
-
-        <div>
-
-          <div className="eyebrow">
-            PROGRESSION
-          </div>
-
-          <h1>
-            Achievements
-          </h1>
-
-          <p>
-            Achievement data will be wired to Supabase later.
-          </p>
-
-        </div>
-
-      </div>
-
-      <section className="panel coming">
-
-        <Award size={44} />
-
-        <h2>
-          Achievement system foundation ready
-        </h2>
-
-        <p>
-          Your database already has achievements and
-          user-achievement records ready to be connected.
-        </p>
-
-      </section>
-
-    </div>
-  );
-}
-
-/* =========================================================
-   PLACEHOLDER V2 PAGES
+   PLACEHOLDER FEATURES
 ========================================================= */
 
 function Foundation({
@@ -1125,6 +1362,7 @@ function Foundation({
   Icon,
   description
 }) {
+
   return (
     <div className="page">
 
@@ -1157,9 +1395,11 @@ function Foundation({
         </h2>
 
         <p>
-          The Supabase database foundation already exists
-          for this feature. We will wire its interface to
-          live data as development continues.
+          The Supabase database
+          foundation already exists for
+          this feature. We will connect
+          it to live data as development
+          continues.
         </p>
 
       </section>
@@ -1168,11 +1408,13 @@ function Foundation({
   );
 }
 
+
 /* =========================================================
    MAIN APP
 ========================================================= */
 
 function App() {
+
   const [session, setSession] =
     useState(null);
 
@@ -1194,29 +1436,41 @@ function App() {
   const [open, setOpen] =
     useState(false);
 
+
   async function loadPlayerData(user) {
+
     if (!user) {
+
       setProfile(null);
       setGameStats([]);
       setStatsLoading(false);
+
       return;
     }
 
     setStatsLoading(true);
 
     try {
+
       const [
         playerProfile,
         playerStats
-      ] = await Promise.all([
-        getMyProfile(user),
-        getMyGameStats(user)
-      ]);
+      ] =
+        await Promise.all([
+          getMyProfile(user),
+          getMyGameStats(user)
+        ]);
 
-      setProfile(playerProfile);
-      setGameStats(playerStats);
+      setProfile(
+        playerProfile
+      );
+
+      setGameStats(
+        playerStats
+      );
 
     } catch (error) {
+
       console.error(
         'Could not load FragRank player data:',
         error
@@ -1225,54 +1479,83 @@ function App() {
       setGameStats([]);
 
     } finally {
+
       setStatsLoading(false);
     }
   }
 
+
   useEffect(() => {
+
     let mounted = true;
 
+
     async function initialize() {
+
       try {
+
         const {
-          data: { session: initialSession },
+          data: {
+            session: initialSession
+          },
           error
         } =
           await supabase.auth.getSession();
+
 
         if (error) {
           throw error;
         }
 
-        if (!mounted) return;
 
-        setSession(initialSession);
+        if (!mounted) {
+          return;
+        }
 
-        if (initialSession?.user) {
+
+        setSession(
+          initialSession
+        );
+
+
+        if (
+          initialSession?.user
+        ) {
+
           await loadPlayerData(
             initialSession.user
           );
+
         } else {
-          setStatsLoading(false);
+
+          setStatsLoading(
+            false
+          );
         }
 
       } catch (error) {
+
         console.error(
           'FragRank initialization error:',
           error
         );
 
       } finally {
+
         if (mounted) {
           setLoading(false);
         }
       }
     }
 
+
     initialize();
 
+
     const {
-      data: { subscription }
+      data: {
+        subscription
+      }
     } =
       supabase.auth.onAuthStateChange(
         async (
@@ -1280,17 +1563,30 @@ function App() {
           newSession
         ) => {
 
-          setSession(newSession);
+          setSession(
+            newSession
+          );
 
-          if (newSession?.user) {
+
+          if (
+            newSession?.user
+          ) {
+
             await loadPlayerData(
               newSession.user
             );
+
           } else {
+
             setProfile(null);
+
             setGameStats([]);
-            setStatsLoading(false);
+
+            setStatsLoading(
+              false
+            );
           }
+
 
           if (mounted) {
             setLoading(false);
@@ -1298,19 +1594,29 @@ function App() {
         }
       );
 
+
     return () => {
+
       mounted = false;
+
       subscription.unsubscribe();
     };
+
   }, []);
 
-  const totals = useMemo(
-    () =>
-      calculateTotals(gameStats),
-    [gameStats]
-  );
+
+  const totals =
+    useMemo(
+      () =>
+        calculateTotals(
+          gameStats
+        ),
+      [gameStats]
+    );
+
 
   if (loading) {
+
     return (
       <div className="loading">
         Loading FragRank…
@@ -1318,9 +1624,12 @@ function App() {
     );
   }
 
+
   if (!session) {
+
     return <Auth />;
   }
+
 
   const displayName =
     profile?.display_name ||
@@ -1333,55 +1642,74 @@ function App() {
       ?.username ||
     'Player';
 
+
   const nav = [
+
     [
       'dashboard',
       'Overview',
       Home
     ],
+
+    [
+      'profile',
+      'Profile',
+      User
+    ],
+
     [
       'stats',
       'My Stats',
       BarChart3
     ],
+
     [
       'friends',
       'Friends',
       Users
     ],
+
     [
       'leaderboard',
       'Leaderboard',
       Globe2
     ],
+
     [
       'achievements',
       'Achievements',
       Award
     ],
+
     [
       'challenges',
       'Challenges',
       Zap
     ],
+
     [
       'tournaments',
       'Tournaments',
       Trophy
     ],
+
     [
       'clans',
       'Clans',
       Shield
     ],
+
     [
       'activity',
       'Activity',
       Activity
     ]
+
   ];
 
+
   const pages = {
+
     dashboard: (
       <Dashboard
         setPage={setPage}
@@ -1393,6 +1721,18 @@ function App() {
       />
     ),
 
+
+    profile: (
+      <ProfileSettings
+        user={session.user}
+        profile={profile}
+        onProfileUpdated={
+          setProfile
+        }
+      />
+    ),
+
+
     stats: (
       <Stats
         totals={totals}
@@ -1401,14 +1741,33 @@ function App() {
       />
     ),
 
-    friends:
-      <Friends />,
 
-    leaderboard:
-      <Leaderboard />,
+    friends: (
+      <Foundation
+        title="Friends"
+        Icon={Users}
+        description="Friend requests, friend profiles, and friend leaderboards."
+      />
+    ),
 
-    achievements:
-      <Achievements />,
+
+    leaderboard: (
+      <Foundation
+        title="Global Leaderboard"
+        Icon={Globe2}
+        description="Global and game-specific competitive rankings."
+      />
+    ),
+
+
+    achievements: (
+      <Foundation
+        title="Achievements"
+        Icon={Award}
+        description="Track milestones, rarity, XP, and achievement progress."
+      />
+    ),
+
 
     challenges: (
       <Foundation
@@ -1418,6 +1777,7 @@ function App() {
       />
     ),
 
+
     tournaments: (
       <Foundation
         title="Tournaments"
@@ -1425,6 +1785,7 @@ function App() {
         description="Custom tournaments, brackets, and competitive events."
       />
     ),
+
 
     clans: (
       <Foundation
@@ -1434,6 +1795,7 @@ function App() {
       />
     ),
 
+
     activity: (
       <Foundation
         title="Activity Feed"
@@ -1441,14 +1803,18 @@ function App() {
         description="Posts, clips, comments, reactions, and player activity."
       />
     )
+
   };
+
 
   return (
     <div className="app">
 
       <aside
         className={`sidebar ${
-          open ? 'open' : ''
+          open
+            ? 'open'
+            : ''
         }`}
       >
 
@@ -1473,9 +1839,11 @@ function App() {
 
         </div>
 
+
         <div className="side-tag">
           TRACK. COMPETE. DOMINATE.
         </div>
+
 
         <nav>
 
@@ -1494,8 +1862,12 @@ function App() {
                     : ''
                 }
                 onClick={() => {
+
                   setPage(id);
-                  setOpen(false);
+
+                  setOpen(
+                    false
+                  );
                 }}
               >
 
@@ -1510,14 +1882,18 @@ function App() {
 
         </nav>
 
+
         <div className="spacer" />
+
 
         <div className="mini-profile">
 
           <div className="avatar">
+
             {displayName
               .charAt(0)
               .toUpperCase()}
+
           </div>
 
           <div>
@@ -1527,14 +1903,16 @@ function App() {
             </b>
 
             <small>
-              {formatNumber(
-                totals.games
-              )} games
+              {profile?.title ||
+                `${formatNumber(
+                  totals.games
+                )} games`}
             </small>
 
           </div>
 
         </div>
+
 
         <button
           className="logout"
@@ -1549,6 +1927,7 @@ function App() {
 
       </aside>
 
+
       <main className="main">
 
         <header className="topbar">
@@ -1562,6 +1941,7 @@ function App() {
             <Menu />
           </button>
 
+
           <div className="search">
 
             <Search size={17} />
@@ -1572,19 +1952,28 @@ function App() {
 
           </div>
 
+
           <div className="topactions">
 
             <button className="iconbtn">
               <Bell size={18} />
             </button>
 
-            <button className="iconbtn">
+            <button
+              className="iconbtn"
+              onClick={() =>
+                setPage(
+                  'profile'
+                )
+              }
+            >
               <Settings size={18} />
             </button>
 
           </div>
 
         </header>
+
 
         {pages[page]}
 
@@ -1594,6 +1983,9 @@ function App() {
   );
 }
 
+
 createRoot(
   document.getElementById('root')
-).render(<App />);
+).render(
+  <App />
+);
