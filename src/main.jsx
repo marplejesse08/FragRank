@@ -20,7 +20,6 @@ import {
   Swords,
   Trophy,
   User,
-  UserPlus,
   Users,
   X,
   Zap
@@ -31,9 +30,9 @@ import { signIn, signOut, signUp } from './auth';
 import './styles.css';
 
 
-/* =========================================================
+/* =========================
    HELPERS
-========================================================= */
+========================= */
 
 function number(value) {
   const n = Number(value);
@@ -57,16 +56,16 @@ function shortGameName(name = '') {
 
   return name
     .split(' ')
-    .map((word) => word[0])
+    .map(word => word[0])
     .join('')
     .slice(0, 5)
     .toUpperCase();
 }
 
 
-/* =========================================================
-   SUPABASE PROFILE
-========================================================= */
+/* =========================
+   PROFILE DATA
+========================= */
 
 async function getMyProfile(user) {
   if (!user) return null;
@@ -78,88 +77,134 @@ async function getMyProfile(user) {
     .maybeSingle();
 
   if (error) {
-    console.error('Could not load profile:', error);
+    console.error('Profile load error:', error);
     return null;
   }
 
   return data;
 }
 
-
 async function updateMyProfile(user, updates) {
   if (!user) {
     throw new Error('You must be signed in.');
   }
 
-  const cleanUpdates = {
-    display_name: updates.display_name?.trim() || null,
-    bio: updates.bio?.trim() || null,
-    title: updates.title?.trim() || null
-  };
-
   const { data, error } = await supabase
     .from('profiles')
-    .update(cleanUpdates)
+    .update({
+      display_name: updates.display_name?.trim() || null,
+      bio: updates.bio?.trim() || null,
+      title: updates.title?.trim() || null
+    })
     .eq('id', user.id)
     .select()
     .single();
 
-  if (error) {
-    throw error;
-  }
+  if (error) throw error;
 
   return data;
 }
 
 
-/* =========================================================
-   SUPABASE GAME STATS
-========================================================= */
+/* =========================
+   GAME STATS DATA
+========================= */
 
 async function getMyGameStats(user) {
   if (!user) return [];
 
-  const { data, error } = await supabase
+  console.log('Loading stats for user:', user.id);
+
+  const {
+    data: statRows,
+    error: statsError
+  } = await supabase
     .from('game_stats')
     .select(`
       id,
+      user_id,
+      game_id,
       games_played,
       wins,
       kills,
       deaths,
       headshots,
-      updated_at,
-      game:games (
-        id,
-        name
-      )
+      updated_at
     `)
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .order('game_id');
 
-  if (error) {
-    console.error('Could not load game stats:', error);
-    throw error;
+  if (statsError) {
+    console.error('game_stats query failed:', statsError);
+    throw statsError;
   }
 
-  return (data || []).map((row) => {
-    const gamesPlayed = number(row.games_played);
-    const wins = number(row.wins);
-    const kills = number(row.kills);
-    const deaths = number(row.deaths);
+  console.log('game_stats rows:', statRows);
+
+  if (!statRows || statRows.length === 0) {
+    return [];
+  }
+
+  const gameIds = [
+    ...new Set(
+      statRows
+        .map(row => row.game_id)
+        .filter(Boolean)
+    )
+  ];
+
+  const {
+    data: gameRows,
+    error: gamesError
+  } = await supabase
+    .from('games')
+    .select('id,name')
+    .in('id', gameIds);
+
+  if (gamesError) {
+    console.error('games query failed:', gamesError);
+    throw gamesError;
+  }
+
+  console.log('games rows:', gameRows);
+
+  const gameMap = {};
+
+  for (const game of gameRows || []) {
+    gameMap[String(game.id)] = game;
+  }
+
+  return statRows.map(row => {
+    const game =
+      gameMap[String(row.game_id)] ||
+      {
+        id: row.game_id,
+        name: `Game ${row.game_id}`
+      };
+
+    const gamesPlayed =
+      number(row.games_played);
+
+    const wins =
+      number(row.wins);
+
+    const kills =
+      number(row.kills);
+
+    const deaths =
+      number(row.deaths);
 
     return {
       id: row.id,
-      gameId: row.game?.id,
+
+      gameId:
+        row.game_id,
 
       name:
-        row.game?.name ||
-        'Unknown Game',
+        game.name,
 
       short:
-        shortGameName(
-          row.game?.name ||
-          'Game'
-        ),
+        shortGameName(game.name),
 
       games:
         gamesPlayed,
@@ -194,29 +239,17 @@ async function getMyGameStats(user) {
   });
 }
 
-
 function calculateTotals(gameStats) {
   const totals = gameStats.reduce(
     (result, game) => {
-
-      result.games +=
-        number(game.games);
-
-      result.wins +=
-        number(game.wins);
-
-      result.kills +=
-        number(game.kills);
-
-      result.deaths +=
-        number(game.deaths);
-
-      result.headshots +=
-        number(game.headshots);
+      result.games += number(game.games);
+      result.wins += number(game.wins);
+      result.kills += number(game.kills);
+      result.deaths += number(game.deaths);
+      result.headshots += number(game.headshots);
 
       return result;
     },
-
     {
       games: 0,
       wins: 0,
@@ -231,29 +264,25 @@ function calculateTotals(gameStats) {
 
     winRate:
       totals.games > 0
-        ? (totals.wins /
-            totals.games) *
-          100
+        ? (totals.wins / totals.games) * 100
         : 0,
 
     kpg:
       totals.games > 0
-        ? totals.kills /
-          totals.games
+        ? totals.kills / totals.games
         : 0,
 
     kd:
       totals.deaths > 0
-        ? totals.kills /
-          totals.deaths
+        ? totals.kills / totals.deaths
         : totals.kills
   };
 }
 
 
-/* =========================================================
-   AUTH
-========================================================= */
+/* =========================
+   AUTH SCREEN
+========================= */
 
 function Auth() {
   const [mode, setMode] =
@@ -284,16 +313,12 @@ function Auth() {
     setMsg('');
 
     try {
-
       if (mode === 'login') {
-
         await signIn(
           email,
           password
         );
-
       } else {
-
         await signUp({
           email,
           password,
@@ -307,16 +332,12 @@ function Auth() {
 
         setMode('login');
       }
-
-    } catch (err) {
-
+    } catch (error) {
       setMsg(
-        err.message ||
+        error.message ||
         'Something went wrong.'
       );
-
     } finally {
-
       setBusy(false);
     }
   }
@@ -354,16 +375,13 @@ function Auth() {
 
           {mode === 'signup' && (
             <>
-
               <label>
                 Username
 
                 <input
                   value={username}
-                  onChange={(e) =>
-                    setUsername(
-                      e.target.value
-                    )
+                  onChange={e =>
+                    setUsername(e.target.value)
                   }
                   required
                 />
@@ -374,14 +392,11 @@ function Auth() {
 
                 <input
                   value={displayName}
-                  onChange={(e) =>
-                    setDisplayName(
-                      e.target.value
-                    )
+                  onChange={e =>
+                    setDisplayName(e.target.value)
                   }
                 />
               </label>
-
             </>
           )}
 
@@ -391,10 +406,8 @@ function Auth() {
             <input
               type="email"
               value={email}
-              onChange={(e) =>
-                setEmail(
-                  e.target.value
-                )
+              onChange={e =>
+                setEmail(e.target.value)
               }
               required
             />
@@ -407,10 +420,8 @@ function Auth() {
               type="password"
               minLength="6"
               value={password}
-              onChange={(e) =>
-                setPassword(
-                  e.target.value
-                )
+              onChange={e =>
+                setPassword(e.target.value)
               }
               required
             />
@@ -437,13 +448,15 @@ function Auth() {
 
         <button
           className="text-button"
-          onClick={() =>
+          onClick={() => {
             setMode(
               mode === 'login'
                 ? 'signup'
                 : 'login'
-            )
-          }
+            );
+
+            setMsg('');
+          }}
         >
           {mode === 'login'
             ? 'Need an account? Create one'
@@ -457,9 +470,9 @@ function Auth() {
 }
 
 
-/* =========================================================
+/* =========================
    STAT CARD
-========================================================= */
+========================= */
 
 function Stat({
   icon: Icon,
@@ -475,21 +488,12 @@ function Stat({
       </div>
 
       <div>
-
-        <span>
-          {label}
-        </span>
-
-        <b>
-          {value}
-        </b>
+        <span>{label}</span>
+        <b>{value}</b>
 
         {sub && (
-          <small>
-            {sub}
-          </small>
+          <small>{sub}</small>
         )}
-
       </div>
 
     </div>
@@ -497,9 +501,9 @@ function Stat({
 }
 
 
-/* =========================================================
-   KPG CHART
-========================================================= */
+/* =========================
+   TEMPORARY CHART
+========================= */
 
 function Chart() {
   const vals = [
@@ -526,11 +530,11 @@ function Chart() {
 
       <div className="bars">
 
-        {vals.map((v, i) => (
+        {vals.map((value, index) => (
 
           <div
             className="barwrap"
-            key={i}
+            key={index}
           >
 
             <div
@@ -538,7 +542,7 @@ function Chart() {
               style={{
                 height: `${
                   28 +
-                  ((v - min) /
+                  ((value - min) /
                     (max - min)) *
                     68
                 }%`
@@ -552,15 +556,13 @@ function Chart() {
       </div>
 
       <div className="axis">
-
         <span>
-          10 games ago
+          Historical data
         </span>
 
         <span>
-          Recent
+          Coming soon
         </span>
-
       </div>
 
     </div>
@@ -568,9 +570,9 @@ function Chart() {
 }
 
 
-/* =========================================================
+/* =========================
    DASHBOARD
-========================================================= */
+========================= */
 
 function Dashboard({
   setPage,
@@ -578,16 +580,14 @@ function Dashboard({
   profile,
   totals,
   gameStats,
-  statsLoading
+  statsLoading,
+  statsError
 }) {
-
   const playerName =
     profile?.display_name ||
     profile?.username ||
-    user?.user_metadata
-      ?.display_name ||
-    user?.user_metadata
-      ?.username ||
+    user?.user_metadata?.display_name ||
+    user?.user_metadata?.username ||
     'Player';
 
   return (
@@ -630,11 +630,15 @@ function Dashboard({
 
       </div>
 
-      <div className="demo-note">
-        Your profile and stored game
-        statistics are connected to
-        Supabase.
-      </div>
+      {statsError ? (
+        <div className="notice">
+          Game stats could not be loaded: {statsError}
+        </div>
+      ) : (
+        <div className="demo-note">
+          Live statistics loaded from your FragRank Supabase database.
+        </div>
+      )}
 
       <div className="stats">
 
@@ -644,11 +648,9 @@ function Dashboard({
           value={
             statsLoading
               ? '...'
-              : formatNumber(
-                  totals.games
-                )
+              : formatNumber(totals.games)
           }
-          sub="Stored in Supabase"
+          sub="Supabase"
         />
 
         <Stat
@@ -657,13 +659,9 @@ function Dashboard({
           value={
             statsLoading
               ? '...'
-              : `${totals.winRate.toFixed(
-                  1
-                )}%`
+              : `${totals.winRate.toFixed(1)}%`
           }
-          sub={`${formatNumber(
-            totals.wins
-          )} wins`}
+          sub={`${formatNumber(totals.wins)} wins`}
         />
 
         <Stat
@@ -672,13 +670,9 @@ function Dashboard({
           value={
             statsLoading
               ? '...'
-              : formatNumber(
-                  totals.kills
-                )
+              : formatNumber(totals.kills)
           }
-          sub={`${formatNumber(
-            totals.deaths
-          )} deaths`}
+          sub={`${formatNumber(totals.deaths)} deaths`}
         />
 
         <Stat
@@ -687,13 +681,9 @@ function Dashboard({
           value={
             statsLoading
               ? '...'
-              : formatDecimal(
-                  totals.kpg
-                )
+              : formatDecimal(totals.kpg)
           }
-          sub={`K/D ${formatDecimal(
-            totals.kd
-          )}`}
+          sub={`K/D ${formatDecimal(totals.kd)}`}
         />
 
       </div>
@@ -705,21 +695,17 @@ function Dashboard({
           <div className="panel-head">
 
             <div>
-
               <h2>
                 Kills per Game
               </h2>
 
               <span>
-                Historical chart placeholder
+                Historical tracking coming next
               </span>
-
             </div>
 
             <span className="pill">
-              {formatDecimal(
-                totals.kpg
-              )} KPG
+              {formatDecimal(totals.kpg)} KPG
             </span>
 
           </div>
@@ -751,15 +737,8 @@ function Dashboard({
           </div>
 
           <div className="progress-label">
-
-            <span>
-              0 XP
-            </span>
-
-            <span>
-              Rank system next
-            </span>
-
+            <span>0 XP</span>
+            <span>Rank system coming</span>
           </div>
 
         </section>
@@ -771,15 +750,13 @@ function Dashboard({
         <div className="panel-head">
 
           <div>
-
             <h2>
               Game Performance
             </h2>
 
             <span>
-              Stored stats for each game
+              Live game records
             </span>
-
           </div>
 
           <button
@@ -798,45 +775,39 @@ function Dashboard({
         {statsLoading ? (
 
           <p className="muted">
-            Loading game statistics…
+            Loading stats…
           </p>
 
         ) : gameStats.length === 0 ? (
 
           <p className="muted">
-            No game stats have been
-            added to your FragRank
-            account yet.
+            No stats found for this account.
           </p>
 
         ) : (
 
           <div className="gamegrid">
 
-            {gameStats.map((g) => (
+            {gameStats.map(game => (
 
               <div
                 className="gamecard"
-                key={`${g.gameId}-${g.id}`}
+                key={game.id}
               >
 
                 <div className="glogo">
-                  {g.short}
+                  {game.short}
                 </div>
 
                 <div>
 
                   <b>
-                    {g.name}
+                    {game.name}
                   </b>
 
                   <small>
-                    {formatNumber(
-                      g.games
-                    )} games •{' '}
-                    {formatNumber(
-                      g.wins
-                    )} wins
+                    {formatNumber(game.games)} games •{' '}
+                    {formatNumber(game.wins)} wins
                   </small>
 
                 </div>
@@ -844,9 +815,7 @@ function Dashboard({
                 <div className="kpg">
 
                   <b>
-                    {formatDecimal(
-                      g.kpg
-                    )}
+                    {formatDecimal(game.kpg)}
                   </b>
 
                   <small>
@@ -870,294 +839,15 @@ function Dashboard({
 }
 
 
-/* =========================================================
-   PROFILE SETTINGS
-========================================================= */
-
-function ProfileSettings({
-  user,
-  profile,
-  onProfileUpdated
-}) {
-
-  const [displayName, setDisplayName] =
-    useState(
-      profile?.display_name ||
-      ''
-    );
-
-  const [bio, setBio] =
-    useState(
-      profile?.bio ||
-      ''
-    );
-
-  const [title, setTitle] =
-    useState(
-      profile?.title ||
-      ''
-    );
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [message, setMessage] =
-    useState('');
-
-  useEffect(() => {
-
-    setDisplayName(
-      profile?.display_name ||
-      ''
-    );
-
-    setBio(
-      profile?.bio ||
-      ''
-    );
-
-    setTitle(
-      profile?.title ||
-      ''
-    );
-
-  }, [profile]);
-
-
-  async function saveProfile(e) {
-    e.preventDefault();
-
-    setSaving(true);
-    setMessage('');
-
-    try {
-
-      const updated =
-        await updateMyProfile(
-          user,
-          {
-            display_name:
-              displayName,
-
-            bio,
-
-            title
-          }
-        );
-
-      onProfileUpdated(
-        updated
-      );
-
-      setMessage(
-        'Profile saved successfully.'
-      );
-
-    } catch (error) {
-
-      console.error(
-        'Could not update profile:',
-        error
-      );
-
-      setMessage(
-        error.message ||
-        'Could not save profile.'
-      );
-
-    } finally {
-
-      setSaving(false);
-    }
-  }
-
-
-  return (
-    <div className="page">
-
-      <div className="page-head">
-
-        <div>
-
-          <div className="eyebrow">
-            PLAYER PROFILE
-          </div>
-
-          <h1>
-            Edit Profile
-          </h1>
-
-          <p>
-            Customize how other players
-            see you on FragRank.
-          </p>
-
-        </div>
-
-      </div>
-
-      <section
-        className="panel"
-        style={{
-          maxWidth: '700px'
-        }}
-      >
-
-        <div
-          style={{
-            display: 'flex',
-            gap: '16px',
-            alignItems: 'center',
-            marginBottom: '25px'
-          }}
-        >
-
-          <div
-            className="avatar"
-            style={{
-              width: '64px',
-              height: '64px',
-              fontSize: '24px'
-            }}
-          >
-            {(
-              displayName ||
-              profile?.username ||
-              'P'
-            )
-              .charAt(0)
-              .toUpperCase()}
-          </div>
-
-          <div>
-
-            <b
-              style={{
-                fontSize: '20px'
-              }}
-            >
-              {profile?.username ||
-                'Player'}
-            </b>
-
-            <div className="muted">
-              @{profile?.username ||
-                'player'}
-            </div>
-
-          </div>
-
-        </div>
-
-
-        <form
-          onSubmit={saveProfile}
-        >
-
-          <label>
-            Username
-
-            <input
-              value={
-                profile?.username ||
-                ''
-              }
-              disabled
-            />
-          </label>
-
-          <label>
-            Display Name
-
-            <input
-              value={displayName}
-              maxLength={40}
-              onChange={(e) =>
-                setDisplayName(
-                  e.target.value
-                )
-              }
-              placeholder="Your display name"
-            />
-          </label>
-
-          <label>
-            Player Title
-
-            <input
-              value={title}
-              maxLength={40}
-              onChange={(e) =>
-                setTitle(
-                  e.target.value
-                )
-              }
-              placeholder="Example: Headshot Hunter"
-            />
-          </label>
-
-          <label>
-            Bio
-
-            <input
-              value={bio}
-              maxLength={160}
-              onChange={(e) =>
-                setBio(
-                  e.target.value
-                )
-              }
-              placeholder="Tell players about yourself"
-            />
-          </label>
-
-
-          {message && (
-
-            <div
-              className="notice"
-              style={{
-                marginBottom: '15px'
-              }}
-            >
-              {message}
-            </div>
-
-          )}
-
-
-          <button
-            className="primary"
-            disabled={saving}
-          >
-
-            <Save size={17} />
-
-            {saving
-              ? 'Saving…'
-              : 'Save Profile'}
-
-          </button>
-
-        </form>
-
-      </section>
-
-    </div>
-  );
-}
-
-
-/* =========================================================
-   STATS
-========================================================= */
+/* =========================
+   STATS PAGE
+========================= */
 
 function Stats({
   totals,
   gameStats,
   statsLoading
 }) {
-
   return (
     <div className="page">
 
@@ -1174,8 +864,7 @@ function Stats({
           </h1>
 
           <p>
-            Your stored statistics by
-            game.
+            Live statistics from Supabase.
           </p>
 
         </div>
@@ -1190,9 +879,7 @@ function Stats({
           value={
             statsLoading
               ? '...'
-              : formatNumber(
-                  totals.games
-                )
+              : formatNumber(totals.games)
           }
         />
 
@@ -1202,9 +889,7 @@ function Stats({
           value={
             statsLoading
               ? '...'
-              : formatNumber(
-                  totals.wins
-                )
+              : formatNumber(totals.wins)
           }
         />
 
@@ -1214,9 +899,7 @@ function Stats({
           value={
             statsLoading
               ? '...'
-              : formatDecimal(
-                  totals.kd
-                )
+              : formatDecimal(totals.kd)
           }
         />
 
@@ -1226,9 +909,7 @@ function Stats({
           value={
             statsLoading
               ? '...'
-              : formatDecimal(
-                  totals.kpg
-                )
+              : formatDecimal(totals.kpg)
           }
         />
 
@@ -1243,7 +924,7 @@ function Stats({
           </h2>
 
           <span>
-            Live FragRank database
+            Supabase
           </span>
 
         </div>
@@ -1272,66 +953,47 @@ function Stats({
               {gameStats.length === 0 ? (
 
                 <tr>
-
                   <td colSpan="8">
-                    No game statistics
-                    have been stored yet.
+                    No game statistics found.
                   </td>
-
                 </tr>
 
               ) : (
 
-                gameStats.map((g) => (
+                gameStats.map(game => (
 
-                  <tr
-                    key={`${g.gameId}-${g.id}`}
-                  >
+                  <tr key={game.id}>
 
                     <td>
-                      <b>{g.name}</b>
+                      <b>{game.name}</b>
                     </td>
 
                     <td>
-                      {formatNumber(
-                        g.games
-                      )}
+                      {formatNumber(game.games)}
                     </td>
 
                     <td>
-                      {formatNumber(
-                        g.wins
-                      )}
+                      {formatNumber(game.wins)}
                     </td>
 
                     <td>
-                      {g.winRate.toFixed(
-                        1
-                      )}%
+                      {game.winRate.toFixed(1)}%
                     </td>
 
                     <td>
-                      {formatNumber(
-                        g.kills
-                      )}
+                      {formatNumber(game.kills)}
                     </td>
 
                     <td>
-                      {formatNumber(
-                        g.deaths
-                      )}
+                      {formatNumber(game.deaths)}
                     </td>
 
                     <td>
-                      {formatDecimal(
-                        g.kd
-                      )}
+                      {formatDecimal(game.kd)}
                     </td>
 
                     <td className="accent">
-                      {formatDecimal(
-                        g.kpg
-                      )}
+                      {formatDecimal(game.kpg)}
                     </td>
 
                   </tr>
@@ -1353,16 +1015,191 @@ function Stats({
 }
 
 
-/* =========================================================
-   PLACEHOLDER FEATURES
-========================================================= */
+/* =========================
+   EDIT PROFILE
+========================= */
+
+function ProfileSettings({
+  user,
+  profile,
+  onProfileUpdated
+}) {
+  const [displayName, setDisplayName] =
+    useState('');
+
+  const [bio, setBio] =
+    useState('');
+
+  const [title, setTitle] =
+    useState('');
+
+  const [saving, setSaving] =
+    useState(false);
+
+  const [message, setMessage] =
+    useState('');
+
+  useEffect(() => {
+    setDisplayName(
+      profile?.display_name || ''
+    );
+
+    setBio(
+      profile?.bio || ''
+    );
+
+    setTitle(
+      profile?.title || ''
+    );
+  }, [profile]);
+
+  async function saveProfile(e) {
+    e.preventDefault();
+
+    setSaving(true);
+    setMessage('');
+
+    try {
+      const updated =
+        await updateMyProfile(
+          user,
+          {
+            display_name: displayName,
+            bio,
+            title
+          }
+        );
+
+      onProfileUpdated(updated);
+
+      setMessage(
+        'Profile saved successfully.'
+      );
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not save profile.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="page">
+
+      <div className="page-head">
+
+        <div>
+
+          <div className="eyebrow">
+            PLAYER PROFILE
+          </div>
+
+          <h1>
+            Edit Profile
+          </h1>
+
+          <p>
+            Customize your FragRank identity.
+          </p>
+
+        </div>
+
+      </div>
+
+      <section
+        className="panel"
+        style={{
+          maxWidth: '700px'
+        }}
+      >
+
+        <form onSubmit={saveProfile}>
+
+          <label>
+            Username
+
+            <input
+              value={
+                profile?.username || ''
+              }
+              disabled
+            />
+          </label>
+
+          <label>
+            Display Name
+
+            <input
+              value={displayName}
+              onChange={e =>
+                setDisplayName(e.target.value)
+              }
+              maxLength={40}
+            />
+          </label>
+
+          <label>
+            Player Title
+
+            <input
+              value={title}
+              onChange={e =>
+                setTitle(e.target.value)
+              }
+              maxLength={40}
+              placeholder="Example: FragRank Founder"
+            />
+          </label>
+
+          <label>
+            Bio
+
+            <input
+              value={bio}
+              onChange={e =>
+                setBio(e.target.value)
+              }
+              maxLength={160}
+            />
+          </label>
+
+          {message && (
+            <div className="notice">
+              {message}
+            </div>
+          )}
+
+          <button
+            className="primary"
+            disabled={saving}
+          >
+            <Save size={17} />
+
+            {saving
+              ? 'Saving…'
+              : 'Save Profile'}
+          </button>
+
+        </form>
+
+      </section>
+
+    </div>
+  );
+}
+
+
+/* =========================
+   FUTURE PAGES
+========================= */
 
 function Foundation({
   title,
   Icon,
   description
 }) {
-
   return (
     <div className="page">
 
@@ -1391,15 +1228,12 @@ function Foundation({
         <Icon size={44} />
 
         <h2>
-          {title} foundation included
+          {title} foundation ready
         </h2>
 
         <p>
-          The Supabase database
-          foundation already exists for
-          this feature. We will connect
-          it to live data as development
-          continues.
+          This feature will be connected to live Supabase data
+          during the next development phases.
         </p>
 
       </section>
@@ -1409,12 +1243,11 @@ function Foundation({
 }
 
 
-/* =========================================================
-   MAIN APP
-========================================================= */
+/* =========================
+   APP
+========================= */
 
 function App() {
-
   const [session, setSession] =
     useState(null);
 
@@ -1428,7 +1261,10 @@ function App() {
     useState(true);
 
   const [statsLoading, setStatsLoading] =
-    useState(true);
+    useState(false);
+
+  const [statsError, setStatsError] =
+    useState('');
 
   const [page, setPage] =
     useState('dashboard');
@@ -1438,119 +1274,85 @@ function App() {
 
 
   async function loadPlayerData(user) {
-
-    if (!user) {
-
-      setProfile(null);
-      setGameStats([]);
-      setStatsLoading(false);
-
-      return;
-    }
+    if (!user) return;
 
     setStatsLoading(true);
+    setStatsError('');
 
     try {
+      const playerProfile =
+        await getMyProfile(user);
 
-      const [
-        playerProfile,
-        playerStats
-      ] =
-        await Promise.all([
-          getMyProfile(user),
-          getMyGameStats(user)
-        ]);
+      setProfile(playerProfile);
 
-      setProfile(
-        playerProfile
-      );
+      const playerStats =
+        await getMyGameStats(user);
 
-      setGameStats(
+      console.log(
+        'Final FragRank stats:',
         playerStats
       );
+
+      setGameStats(playerStats);
 
     } catch (error) {
-
       console.error(
-        'Could not load FragRank player data:',
+        'FragRank data load failed:',
         error
+      );
+
+      setStatsError(
+        error.message ||
+        'Unknown Supabase error'
       );
 
       setGameStats([]);
 
     } finally {
-
       setStatsLoading(false);
     }
   }
 
 
   useEffect(() => {
+    let alive = true;
 
-    let mounted = true;
-
-
-    async function initialize() {
-
+    async function start() {
       try {
-
         const {
           data: {
-            session: initialSession
+            session: currentSession
           },
           error
         } =
           await supabase.auth.getSession();
 
+        if (error) throw error;
 
-        if (error) {
-          throw error;
-        }
+        if (!alive) return;
 
+        setSession(currentSession);
 
-        if (!mounted) {
-          return;
-        }
-
-
-        setSession(
-          initialSession
-        );
-
-
-        if (
-          initialSession?.user
-        ) {
-
+        if (currentSession?.user) {
           await loadPlayerData(
-            initialSession.user
-          );
-
-        } else {
-
-          setStatsLoading(
-            false
+            currentSession.user
           );
         }
 
       } catch (error) {
-
         console.error(
-          'FragRank initialization error:',
+          'FragRank startup error:',
           error
         );
 
       } finally {
-
-        if (mounted) {
+        if (alive) {
           setLoading(false);
         }
       }
     }
 
-
-    initialize();
-
+    start();
 
     const {
       data: {
@@ -1558,47 +1360,26 @@ function App() {
       }
     } =
       supabase.auth.onAuthStateChange(
-        async (
-          _event,
-          newSession
-        ) => {
+        (_event, nextSession) => {
 
-          setSession(
-            newSession
-          );
+          setSession(nextSession);
 
-
-          if (
-            newSession?.user
-          ) {
-
-            await loadPlayerData(
-              newSession.user
-            );
-
+          if (nextSession?.user) {
+            setTimeout(() => {
+              loadPlayerData(
+                nextSession.user
+              );
+            }, 0);
           } else {
-
             setProfile(null);
-
             setGameStats([]);
-
-            setStatsLoading(
-              false
-            );
           }
 
-
-          if (mounted) {
-            setLoading(false);
-          }
         }
       );
 
-
     return () => {
-
-      mounted = false;
-
+      alive = false;
       subscription.unsubscribe();
     };
 
@@ -1608,15 +1389,12 @@ function App() {
   const totals =
     useMemo(
       () =>
-        calculateTotals(
-          gameStats
-        ),
+        calculateTotals(gameStats),
       [gameStats]
     );
 
 
   if (loading) {
-
     return (
       <div className="loading">
         Loading FragRank…
@@ -1626,7 +1404,6 @@ function App() {
 
 
   if (!session) {
-
     return <Auth />;
   }
 
@@ -1644,72 +1421,20 @@ function App() {
 
 
   const nav = [
-
-    [
-      'dashboard',
-      'Overview',
-      Home
-    ],
-
-    [
-      'profile',
-      'Profile',
-      User
-    ],
-
-    [
-      'stats',
-      'My Stats',
-      BarChart3
-    ],
-
-    [
-      'friends',
-      'Friends',
-      Users
-    ],
-
-    [
-      'leaderboard',
-      'Leaderboard',
-      Globe2
-    ],
-
-    [
-      'achievements',
-      'Achievements',
-      Award
-    ],
-
-    [
-      'challenges',
-      'Challenges',
-      Zap
-    ],
-
-    [
-      'tournaments',
-      'Tournaments',
-      Trophy
-    ],
-
-    [
-      'clans',
-      'Clans',
-      Shield
-    ],
-
-    [
-      'activity',
-      'Activity',
-      Activity
-    ]
-
+    ['dashboard', 'Overview', Home],
+    ['profile', 'Profile', User],
+    ['stats', 'My Stats', BarChart3],
+    ['friends', 'Friends', Users],
+    ['leaderboard', 'Leaderboard', Globe2],
+    ['achievements', 'Achievements', Award],
+    ['challenges', 'Challenges', Zap],
+    ['tournaments', 'Tournaments', Trophy],
+    ['clans', 'Clans', Shield],
+    ['activity', 'Activity', Activity]
   ];
 
 
   const pages = {
-
     dashboard: (
       <Dashboard
         setPage={setPage}
@@ -1718,20 +1443,17 @@ function App() {
         totals={totals}
         gameStats={gameStats}
         statsLoading={statsLoading}
+        statsError={statsError}
       />
     ),
-
 
     profile: (
       <ProfileSettings
         user={session.user}
         profile={profile}
-        onProfileUpdated={
-          setProfile
-        }
+        onProfileUpdated={setProfile}
       />
     ),
-
 
     stats: (
       <Stats
@@ -1741,7 +1463,6 @@ function App() {
       />
     ),
 
-
     friends: (
       <Foundation
         title="Friends"
@@ -1749,7 +1470,6 @@ function App() {
         description="Friend requests, friend profiles, and friend leaderboards."
       />
     ),
-
 
     leaderboard: (
       <Foundation
@@ -1759,51 +1479,45 @@ function App() {
       />
     ),
 
-
     achievements: (
       <Foundation
         title="Achievements"
         Icon={Award}
-        description="Track milestones, rarity, XP, and achievement progress."
+        description="Milestones, rarity, progression, and achievement rewards."
       />
     ),
-
 
     challenges: (
       <Foundation
         title="Challenges"
         Icon={Zap}
-        description="Head-to-head competitive challenges and tracked goals."
+        description="Head-to-head competitive challenges."
       />
     ),
-
 
     tournaments: (
       <Foundation
         title="Tournaments"
         Icon={Trophy}
-        description="Custom tournaments, brackets, and competitive events."
+        description="Custom tournaments and competitive brackets."
       />
     ),
-
 
     clans: (
       <Foundation
         title="Clans"
         Icon={Shield}
-        description="Teams, clan members, clan stats, chat, and wars."
+        description="Teams, clan stats, chat, and clan competition."
       />
     ),
-
 
     activity: (
       <Foundation
         title="Activity Feed"
         Icon={Activity}
-        description="Posts, clips, comments, reactions, and player activity."
+        description="Posts, clips, reactions, comments, and player activity."
       />
     )
-
   };
 
 
@@ -1812,9 +1526,7 @@ function App() {
 
       <aside
         className={`sidebar ${
-          open
-            ? 'open'
-            : ''
+          open ? 'open' : ''
         }`}
       >
 
@@ -1848,11 +1560,7 @@ function App() {
         <nav>
 
           {nav.map(
-            ([
-              id,
-              label,
-              Icon
-            ]) => (
+            ([id, label, Icon]) => (
 
               <button
                 key={id}
@@ -1862,19 +1570,13 @@ function App() {
                     : ''
                 }
                 onClick={() => {
-
                   setPage(id);
-
-                  setOpen(
-                    false
-                  );
+                  setOpen(false);
                 }}
               >
-
                 <Icon size={18} />
 
                 {label}
-
               </button>
 
             )
@@ -1889,11 +1591,9 @@ function App() {
         <div className="mini-profile">
 
           <div className="avatar">
-
             {displayName
               .charAt(0)
               .toUpperCase()}
-
           </div>
 
           <div>
@@ -1903,10 +1603,7 @@ function App() {
             </b>
 
             <small>
-              {profile?.title ||
-                `${formatNumber(
-                  totals.games
-                )} games`}
+              {formatNumber(totals.games)} games
             </small>
 
           </div>
@@ -1918,11 +1615,9 @@ function App() {
           className="logout"
           onClick={signOut}
         >
-
           <LogOut size={17} />
 
           Sign out
-
         </button>
 
       </aside>
@@ -1962,9 +1657,7 @@ function App() {
             <button
               className="iconbtn"
               onClick={() =>
-                setPage(
-                  'profile'
-                )
+                setPage('profile')
               }
             >
               <Settings size={18} />
