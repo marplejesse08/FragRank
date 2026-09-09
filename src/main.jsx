@@ -6,6 +6,7 @@ import {
   Award,
   BarChart3,
   Bell,
+  Check,
   ChevronLeft,
   ChevronRight,
   Crown,
@@ -22,6 +23,7 @@ import {
   Target,
   Trophy,
   User,
+  UserPlus,
   Users,
   X,
   Zap
@@ -58,7 +60,7 @@ function shortGameName(name = '') {
 
   return name
     .split(' ')
-    .map((word) => word[0])
+    .map(word => word[0])
     .join('')
     .slice(0, 5)
     .toUpperCase();
@@ -66,31 +68,24 @@ function shortGameName(name = '') {
 
 
 /* =========================
-   PROFILE DATA
+   PROFILE
 ========================= */
 
-async function getMyProfile(user) {
-  if (!user) return null;
+async function getProfile(userId) {
+  if (!userId) return null;
 
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
-    .eq('id', user.id)
+    .eq('id', userId)
     .maybeSingle();
 
-  if (error) {
-    console.error('Profile load error:', error);
-    return null;
-  }
+  if (error) throw error;
 
   return data;
 }
 
 async function updateMyProfile(user, updates) {
-  if (!user) {
-    throw new Error('You must be signed in.');
-  }
-
   const { data, error } = await supabase
     .from('profiles')
     .update({
@@ -109,11 +104,11 @@ async function updateMyProfile(user, updates) {
 
 
 /* =========================
-   GAME STATS DATA
+   GAME STATS
 ========================= */
 
-async function getMyGameStats(user) {
-  if (!user) return [];
+async function getGameStats(userId) {
+  if (!userId) return [];
 
   const {
     data: statRows,
@@ -131,23 +126,18 @@ async function getMyGameStats(user) {
       headshots,
       updated_at
     `)
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .order('game_id');
 
-  if (statsError) {
-    console.error('game_stats query failed:', statsError);
-    throw statsError;
-  }
+  if (statsError) throw statsError;
 
-  if (!statRows || statRows.length === 0) {
+  if (!statRows?.length) {
     return [];
   }
 
   const gameIds = [
     ...new Set(
-      statRows
-        .map((row) => row.game_id)
-        .filter(Boolean)
+      statRows.map(row => row.game_id)
     )
   ];
 
@@ -159,10 +149,7 @@ async function getMyGameStats(user) {
     .select('id,name')
     .in('id', gameIds);
 
-  if (gamesError) {
-    console.error('games query failed:', gamesError);
-    throw gamesError;
-  }
+  if (gamesError) throw gamesError;
 
   const gameMap = {};
 
@@ -170,25 +157,30 @@ async function getMyGameStats(user) {
     gameMap[String(game.id)] = game;
   }
 
-  return statRows.map((row) => {
+  return statRows.map(row => {
     const game =
       gameMap[String(row.game_id)] || {
         id: row.game_id,
         name: `Game ${row.game_id}`
       };
 
-    const gamesPlayed = number(row.games_played);
-    const wins = number(row.wins);
-    const kills = number(row.kills);
-    const deaths = number(row.deaths);
+    const gamesPlayed =
+      number(row.games_played);
+
+    const wins =
+      number(row.wins);
+
+    const kills =
+      number(row.kills);
+
+    const deaths =
+      number(row.deaths);
 
     return {
       id: row.id,
       gameId: row.game_id,
-
       name: game.name,
       short: shortGameName(game.name),
-
       games: gamesPlayed,
       wins,
       kills,
@@ -208,9 +200,7 @@ async function getMyGameStats(user) {
       kd:
         deaths > 0
           ? kills / deaths
-          : kills,
-
-      updatedAt: row.updated_at
+          : kills
     };
   });
 }
@@ -257,20 +247,214 @@ function calculateTotals(gameStats) {
 
 
 /* =========================
+   FRIENDS
+========================= */
+
+async function searchPlayers(text, currentUserId) {
+  const query = text.trim();
+
+  if (!query) return [];
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select(`
+      id,
+      username,
+      display_name,
+      bio,
+      title,
+      avatar_url
+    `)
+    .neq('id', currentUserId)
+    .or(
+      `username.ilike.%${query}%,display_name.ilike.%${query}%`
+    )
+    .limit(15);
+
+  if (error) throw error;
+
+  return data || [];
+}
+
+async function sendFriendRequest(currentUserId, otherUserId) {
+  const { data: existing, error: existingError } =
+    await supabase
+      .from('friendships')
+      .select('*')
+      .or(
+        `and(requester.eq.${currentUserId},addressee.eq.${otherUserId}),and(requester.eq.${otherUserId},addressee.eq.${currentUserId})`
+      );
+
+  if (existingError) throw existingError;
+
+  if (existing?.length) {
+    throw new Error(
+      existing[0].status === 'accepted'
+        ? 'You are already friends.'
+        : 'A friend request already exists.'
+    );
+  }
+
+  const { error } = await supabase
+    .from('friendships')
+    .insert({
+      requester: currentUserId,
+      addressee: otherUserId,
+      status: 'pending'
+    });
+
+  if (error) throw error;
+}
+
+async function getFriendships(userId) {
+  const { data, error } = await supabase
+    .from('friendships')
+    .select('*')
+    .or(
+      `requester.eq.${userId},addressee.eq.${userId}`
+    )
+    .order('created_at', {
+      ascending: false
+    });
+
+  if (error) throw error;
+
+  const rows = data || [];
+
+  if (!rows.length) {
+    return {
+      friends: [],
+      incoming: [],
+      outgoing: []
+    };
+  }
+
+  const profileIds = [
+    ...new Set(
+      rows.flatMap(row => [
+        row.requester,
+        row.addressee
+      ])
+    )
+  ].filter(id => id !== userId);
+
+  const {
+    data: profiles,
+    error: profilesError
+  } = await supabase
+    .from('profiles')
+    .select(`
+      id,
+      username,
+      display_name,
+      bio,
+      title,
+      avatar_url
+    `)
+    .in('id', profileIds);
+
+  if (profilesError) throw profilesError;
+
+  const profileMap = {};
+
+  for (const profile of profiles || []) {
+    profileMap[profile.id] = profile;
+  }
+
+  const friends = [];
+  const incoming = [];
+  const outgoing = [];
+
+  for (const row of rows) {
+    const otherId =
+      row.requester === userId
+        ? row.addressee
+        : row.requester;
+
+    const other =
+      profileMap[otherId];
+
+    if (!other) continue;
+
+    const item = {
+      friendshipId: row.id,
+      status: row.status,
+      requester: row.requester,
+      addressee: row.addressee,
+      profile: other
+    };
+
+    if (row.status === 'accepted') {
+      friends.push(item);
+    } else if (
+      row.status === 'pending' &&
+      row.addressee === userId
+    ) {
+      incoming.push(item);
+    } else if (
+      row.status === 'pending' &&
+      row.requester === userId
+    ) {
+      outgoing.push(item);
+    }
+  }
+
+  return {
+    friends,
+    incoming,
+    outgoing
+  };
+}
+
+async function respondToFriendRequest(
+  friendshipId,
+  status
+) {
+  const { error } = await supabase
+    .from('friendships')
+    .update({
+      status
+    })
+    .eq('id', friendshipId);
+
+  if (error) throw error;
+}
+
+async function removeFriend(friendshipId) {
+  const { error } = await supabase
+    .from('friendships')
+    .delete()
+    .eq('id', friendshipId);
+
+  if (error) throw error;
+}
+
+
+/* =========================
    AUTH
 ========================= */
 
 function Auth() {
-  const [mode, setMode] = useState('login');
+  const [mode, setMode] =
+    useState('login');
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] =
+    useState('');
 
-  const [username, setUsername] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] =
+    useState('');
 
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState('');
+  const [username, setUsername] =
+    useState('');
+
+  const [displayName, setDisplayName] =
+    useState('');
+
+  const [busy, setBusy] =
+    useState(false);
+
+  const [msg, setMsg] =
+    useState('');
 
   async function submit(e) {
     e.preventDefault();
@@ -280,7 +464,10 @@ function Auth() {
 
     try {
       if (mode === 'login') {
-        await signIn(email, password);
+        await signIn(
+          email,
+          password
+        );
       } else {
         await signUp({
           email,
@@ -342,7 +529,7 @@ function Auth() {
 
                 <input
                   value={username}
-                  onChange={(e) =>
+                  onChange={e =>
                     setUsername(e.target.value)
                   }
                   required
@@ -354,7 +541,7 @@ function Auth() {
 
                 <input
                   value={displayName}
-                  onChange={(e) =>
+                  onChange={e =>
                     setDisplayName(e.target.value)
                   }
                 />
@@ -368,7 +555,7 @@ function Auth() {
             <input
               type="email"
               value={email}
-              onChange={(e) =>
+              onChange={e =>
                 setEmail(e.target.value)
               }
               required
@@ -382,7 +569,7 @@ function Auth() {
               type="password"
               minLength="6"
               value={password}
-              onChange={(e) =>
+              onChange={e =>
                 setPassword(e.target.value)
               }
               required
@@ -450,7 +637,6 @@ function Stat({
 
       <div>
         <span>{label}</span>
-
         <b>{value}</b>
 
         {sub && (
@@ -481,32 +667,37 @@ function Chart() {
     6.87
   ];
 
-  const max = Math.max(...vals);
-  const min = Math.min(...vals);
+  const max =
+    Math.max(...vals);
+
+  const min =
+    Math.min(...vals);
 
   return (
     <div className="chart">
 
       <div className="bars">
 
-        {vals.map((value, index) => (
-          <div
-            className="barwrap"
-            key={index}
-          >
+        {vals.map(
+          (value, index) => (
             <div
-              className="bar"
-              style={{
-                height: `${
-                  28 +
-                  ((value - min) /
-                    (max - min)) *
-                    68
-                }%`
-              }}
-            />
-          </div>
-        ))}
+              className="barwrap"
+              key={index}
+            >
+              <div
+                className="bar"
+                style={{
+                  height: `${
+                    28 +
+                    ((value - min) /
+                      (max - min)) *
+                      68
+                  }%`
+                }}
+              />
+            </div>
+          )
+        )}
 
       </div>
 
@@ -552,6 +743,7 @@ function Dashboard({
       <div className="page-head">
 
         <div>
+
           <div className="eyebrow">
             PLAYER DASHBOARD
           </div>
@@ -569,6 +761,7 @@ function Dashboard({
           <p>
             Here’s your competitive snapshot.
           </p>
+
         </div>
 
         <button
@@ -602,7 +795,9 @@ function Dashboard({
           value={
             statsLoading
               ? '...'
-              : formatNumber(totals.games)
+              : formatNumber(
+                  totals.games
+                )
           }
           sub="Supabase"
         />
@@ -613,9 +808,13 @@ function Dashboard({
           value={
             statsLoading
               ? '...'
-              : `${totals.winRate.toFixed(1)}%`
+              : `${totals.winRate.toFixed(
+                  1
+                )}%`
           }
-          sub={`${formatNumber(totals.wins)} wins`}
+          sub={`${formatNumber(
+            totals.wins
+          )} wins`}
         />
 
         <Stat
@@ -624,9 +823,13 @@ function Dashboard({
           value={
             statsLoading
               ? '...'
-              : formatNumber(totals.kills)
+              : formatNumber(
+                  totals.kills
+                )
           }
-          sub={`${formatNumber(totals.deaths)} deaths`}
+          sub={`${formatNumber(
+            totals.deaths
+          )} deaths`}
         />
 
         <Stat
@@ -635,9 +838,13 @@ function Dashboard({
           value={
             statsLoading
               ? '...'
-              : formatDecimal(totals.kpg)
+              : formatDecimal(
+                  totals.kpg
+                )
           }
-          sub={`K/D ${formatDecimal(totals.kd)}`}
+          sub={`K/D ${formatDecimal(
+            totals.kd
+          )}`}
         />
 
       </div>
@@ -649,6 +856,7 @@ function Dashboard({
           <div className="panel-head">
 
             <div>
+
               <h2>
                 Kills per Game
               </h2>
@@ -656,10 +864,13 @@ function Dashboard({
               <span>
                 Historical tracking coming next
               </span>
+
             </div>
 
             <span className="pill">
-              {formatDecimal(totals.kpg)} KPG
+              {formatDecimal(
+                totals.kpg
+              )} KPG
             </span>
 
           </div>
@@ -704,6 +915,7 @@ function Dashboard({
         <div className="panel-head">
 
           <div>
+
             <h2>
               Game Performance
             </h2>
@@ -711,6 +923,7 @@ function Dashboard({
             <span>
               Tap a game for detailed statistics
             </span>
+
           </div>
 
           <button
@@ -726,76 +939,66 @@ function Dashboard({
 
         </div>
 
-        {statsLoading ? (
+        <div className="gamegrid">
 
-          <p className="muted">
-            Loading stats…
-          </p>
+          {gameStats.map(game => (
 
-        ) : gameStats.length === 0 ? (
+            <button
+              key={game.id}
+              onClick={() =>
+                openGame(game)
+              }
+              style={{
+                all: 'unset',
+                cursor: 'pointer',
+                display: 'block'
+              }}
+            >
 
-          <p className="muted">
-            No stats found for this account.
-          </p>
+              <div className="gamecard">
 
-        ) : (
+                <div className="glogo">
+                  {game.short}
+                </div>
 
-          <div className="gamegrid">
+                <div>
 
-            {gameStats.map((game) => (
+                  <b>
+                    {game.name}
+                  </b>
 
-              <button
-                key={game.id}
-                onClick={() =>
-                  openGame(game)
-                }
-                style={{
-                  all: 'unset',
-                  cursor: 'pointer',
-                  display: 'block'
-                }}
-              >
-
-                <div className="gamecard">
-
-                  <div className="glogo">
-                    {game.short}
-                  </div>
-
-                  <div>
-
-                    <b>
-                      {game.name}
-                    </b>
-
-                    <small>
-                      {formatNumber(game.games)} games •{' '}
-                      {formatNumber(game.wins)} wins
-                    </small>
-
-                  </div>
-
-                  <div className="kpg">
-
-                    <b>
-                      {formatDecimal(game.kpg)}
-                    </b>
-
-                    <small>
-                      KPG
-                    </small>
-
-                  </div>
+                  <small>
+                    {formatNumber(
+                      game.games
+                    )} games •{' '}
+                    {formatNumber(
+                      game.wins
+                    )} wins
+                  </small>
 
                 </div>
 
-              </button>
+                <div className="kpg">
 
-            ))}
+                  <b>
+                    {formatDecimal(
+                      game.kpg
+                    )}
+                  </b>
 
-          </div>
+                  <small>
+                    KPG
+                  </small>
 
-        )}
+                </div>
+
+              </div>
+
+            </button>
+
+          ))}
+
+        </div>
 
       </section>
 
@@ -805,13 +1008,12 @@ function Dashboard({
 
 
 /* =========================
-   FULL STATS PAGE
+   MY STATS
 ========================= */
 
 function Stats({
   totals,
   gameStats,
-  statsLoading,
   openGame
 }) {
   return (
@@ -820,6 +1022,7 @@ function Stats({
       <div className="page-head">
 
         <div>
+
           <div className="eyebrow">
             ANALYTICS
           </div>
@@ -831,6 +1034,7 @@ function Stats({
           <p>
             Tap a game to view detailed statistics.
           </p>
+
         </div>
 
       </div>
@@ -840,41 +1044,33 @@ function Stats({
         <Stat
           icon={Gamepad2}
           label="Games Played"
-          value={
-            statsLoading
-              ? '...'
-              : formatNumber(totals.games)
-          }
+          value={formatNumber(
+            totals.games
+          )}
         />
 
         <Stat
           icon={Trophy}
           label="Wins"
-          value={
-            statsLoading
-              ? '...'
-              : formatNumber(totals.wins)
-          }
+          value={formatNumber(
+            totals.wins
+          )}
         />
 
         <Stat
           icon={Swords}
           label="K/D"
-          value={
-            statsLoading
-              ? '...'
-              : formatDecimal(totals.kd)
-          }
+          value={formatDecimal(
+            totals.kd
+          )}
         />
 
         <Stat
           icon={Zap}
           label="Kills / Game"
-          value={
-            statsLoading
-              ? '...'
-              : formatDecimal(totals.kpg)
-          }
+          value={formatDecimal(
+            totals.kpg
+          )}
         />
 
       </div>
@@ -882,7 +1078,6 @@ function Stats({
       <section className="panel tablepanel">
 
         <div className="panel-head">
-
           <h2>
             Game Breakdown
           </h2>
@@ -890,7 +1085,6 @@ function Stats({
           <span>
             Tap any game
           </span>
-
         </div>
 
         <div className="tablewrap">
@@ -914,67 +1108,69 @@ function Stats({
 
             <tbody>
 
-              {gameStats.length === 0 ? (
+              {gameStats.map(game => (
 
-                <tr>
-                  <td colSpan="8">
-                    No game statistics found.
+                <tr
+                  key={game.id}
+                  onClick={() =>
+                    openGame(game)
+                  }
+                  style={{
+                    cursor: 'pointer'
+                  }}
+                >
+
+                  <td>
+                    <b>
+                      {game.name}
+                    </b>
                   </td>
+
+                  <td>
+                    {formatNumber(
+                      game.games
+                    )}
+                  </td>
+
+                  <td>
+                    {formatNumber(
+                      game.wins
+                    )}
+                  </td>
+
+                  <td>
+                    {game.winRate.toFixed(
+                      1
+                    )}%
+                  </td>
+
+                  <td>
+                    {formatNumber(
+                      game.kills
+                    )}
+                  </td>
+
+                  <td>
+                    {formatNumber(
+                      game.deaths
+                    )}
+                  </td>
+
+                  <td>
+                    {formatDecimal(
+                      game.kd
+                    )}
+                  </td>
+
+                  <td className="accent">
+                    {formatDecimal(
+                      game.kpg
+                    )}
+                  </td>
+
                 </tr>
 
-              ) : (
-
-                gameStats.map((game) => (
-
-                  <tr
-                    key={game.id}
-                    onClick={() =>
-                      openGame(game)
-                    }
-                    style={{
-                      cursor: 'pointer'
-                    }}
-                  >
-
-                    <td>
-                      <b>
-                        {game.name}
-                      </b>
-                    </td>
-
-                    <td>
-                      {formatNumber(game.games)}
-                    </td>
-
-                    <td>
-                      {formatNumber(game.wins)}
-                    </td>
-
-                    <td>
-                      {game.winRate.toFixed(1)}%
-                    </td>
-
-                    <td>
-                      {formatNumber(game.kills)}
-                    </td>
-
-                    <td>
-                      {formatNumber(game.deaths)}
-                    </td>
-
-                    <td>
-                      {formatDecimal(game.kd)}
-                    </td>
-
-                    <td className="accent">
-                      {formatDecimal(game.kpg)}
-                    </td>
-
-                  </tr>
-
-                ))
-
-              )}
+              ))}
 
             </tbody>
 
@@ -990,16 +1186,14 @@ function Stats({
 
 
 /* =========================
-   INDIVIDUAL GAME PAGE
+   GAME DETAIL
 ========================= */
 
 function GameDetail({
   game,
   back
 }) {
-  if (!game) {
-    return null;
-  }
+  if (!game) return null;
 
   return (
     <div className="page">
@@ -1011,12 +1205,6 @@ function GameDetail({
           <button
             className="linkbtn"
             onClick={back}
-            style={{
-              marginBottom: '18px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px'
-            }}
           >
             <ChevronLeft size={18} />
 
@@ -1032,26 +1220,20 @@ function GameDetail({
           </h1>
 
           <p>
-            Your FragRank performance for {game.name}.
+            Live performance data.
           </p>
 
         </div>
 
       </div>
 
-
-      <section
-        className="panel"
-        style={{
-          marginBottom: '18px'
-        }}
-      >
+      <section className="panel">
 
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
-            gap: '18px'
+            gap: '18px',
+            alignItems: 'center'
           }}
         >
 
@@ -1059,8 +1241,7 @@ function GameDetail({
             className="glogo"
             style={{
               width: '72px',
-              height: '72px',
-              fontSize: '16px'
+              height: '72px'
             }}
           >
             {game.short}
@@ -1072,15 +1253,11 @@ function GameDetail({
               CONNECTED GAME
             </div>
 
-            <h2
-              style={{
-                margin: '6px 0'
-              }}
-            >
+            <h2>
               {game.name}
             </h2>
 
-            <span className="muted">
+            <span>
               Live stats from Supabase
             </span>
 
@@ -1090,62 +1267,241 @@ function GameDetail({
 
       </section>
 
-
       <div className="stats">
 
         <Stat
           icon={Gamepad2}
           label="Games Played"
-          value={formatNumber(game.games)}
+          value={formatNumber(
+            game.games
+          )}
         />
 
         <Stat
           icon={Trophy}
           label="Wins"
-          value={formatNumber(game.wins)}
-          sub={`${game.winRate.toFixed(1)}% win rate`}
+          value={formatNumber(
+            game.wins
+          )}
+          sub={`${game.winRate.toFixed(
+            1
+          )}% win rate`}
         />
 
         <Stat
           icon={Swords}
           label="Kills"
-          value={formatNumber(game.kills)}
+          value={formatNumber(
+            game.kills
+          )}
         />
 
         <Stat
           icon={Shield}
           label="Deaths"
-          value={formatNumber(game.deaths)}
+          value={formatNumber(
+            game.deaths
+          )}
         />
-
-      </div>
-
-
-      <div className="stats">
 
         <Stat
           icon={Target}
           label="K/D"
-          value={formatDecimal(game.kd)}
+          value={formatDecimal(
+            game.kd
+          )}
         />
 
         <Stat
           icon={Zap}
           label="Kills / Game"
-          value={formatDecimal(game.kpg)}
+          value={formatDecimal(
+            game.kpg
+          )}
         />
 
         <Stat
           icon={Target}
           label="Headshots"
-          value={formatNumber(game.headshots)}
+          value={formatNumber(
+            game.headshots
+          )}
         />
 
         <Stat
           icon={Trophy}
           label="Win Rate"
-          value={`${game.winRate.toFixed(1)}%`}
+          value={`${game.winRate.toFixed(
+            1
+          )}%`}
         />
+
+      </div>
+
+    </div>
+  );
+}
+
+
+/* =========================
+   FRIENDS PAGE
+========================= */
+
+function FriendsPage({
+  user,
+  openFriend
+}) {
+  const [friends, setFriends] =
+    useState([]);
+
+  const [incoming, setIncoming] =
+    useState([]);
+
+  const [outgoing, setOutgoing] =
+    useState([]);
+
+  const [searchText, setSearchText] =
+    useState('');
+
+  const [searchResults, setSearchResults] =
+    useState([]);
+
+  const [message, setMessage] =
+    useState('');
+
+  const [loading, setLoading] =
+    useState(true);
+
+
+  async function loadFriends() {
+    setLoading(true);
+
+    try {
+      const result =
+        await getFriendships(
+          user.id
+        );
+
+      setFriends(
+        result.friends
+      );
+
+      setIncoming(
+        result.incoming
+      );
+
+      setOutgoing(
+        result.outgoing
+      );
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not load friends.'
+      );
+
+    } finally {
+      setLoading(false);
+    }
+  }
+
+
+  useEffect(() => {
+    loadFriends();
+  }, [user.id]);
+
+
+  async function runSearch(e) {
+    e.preventDefault();
+
+    setMessage('');
+
+    try {
+      const results =
+        await searchPlayers(
+          searchText,
+          user.id
+        );
+
+      setSearchResults(
+        results
+      );
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Search failed.'
+      );
+    }
+  }
+
+
+  async function addFriend(profile) {
+    try {
+      await sendFriendRequest(
+        user.id,
+        profile.id
+      );
+
+      setMessage(
+        `Friend request sent to ${
+          profile.display_name ||
+          profile.username
+        }.`
+      );
+
+      await loadFriends();
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not send request.'
+      );
+    }
+  }
+
+
+  async function respond(
+    friendshipId,
+    status
+  ) {
+    try {
+      await respondToFriendRequest(
+        friendshipId,
+        status
+      );
+
+      await loadFriends();
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not update request.'
+      );
+    }
+  }
+
+
+  return (
+    <div className="page">
+
+      <div className="page-head">
+
+        <div>
+
+          <div className="eyebrow">
+            SOCIAL
+          </div>
+
+          <h1>
+            Friends
+          </h1>
+
+          <p>
+            Find players, send requests, and compare stats.
+          </p>
+
+        </div>
 
       </div>
 
@@ -1157,105 +1513,597 @@ function GameDetail({
           <div>
 
             <h2>
-              Performance Summary
+              Find Players
             </h2>
 
             <span>
-              Current stored statistics
+              Search by username or display name
             </span>
 
           </div>
 
         </div>
 
-        <div
+        <form
+          onSubmit={runSearch}
           style={{
-            display: 'grid',
-            gap: '16px'
+            display: 'flex',
+            gap: '10px'
           }}
         >
 
-          <div className="gamecard">
+          <input
+            value={searchText}
+            onChange={e =>
+              setSearchText(
+                e.target.value
+              )
+            }
+            placeholder="Search players..."
+            style={{
+              flex: 1
+            }}
+          />
 
-            <div className="stat-icon">
-              <Gamepad2 size={20} />
+          <button
+            className="primary"
+          >
+            <Search size={17} />
+
+            Search
+          </button>
+
+        </form>
+
+
+        {message && (
+          <div
+            className="notice"
+            style={{
+              marginTop: '15px'
+            }}
+          >
+            {message}
+          </div>
+        )}
+
+
+        {searchResults.map(
+          profile => (
+
+            <div
+              className="friend"
+              key={profile.id}
+            >
+
+              <div className="avatar">
+                {(
+                  profile.display_name ||
+                  profile.username ||
+                  'P'
+                )[0].toUpperCase()}
+              </div>
+
+              <div>
+
+                <b>
+                  {profile.display_name ||
+                    profile.username}
+                </b>
+
+                <small>
+                  @{profile.username}
+                </small>
+
+              </div>
+
+              <button
+                className="primary"
+                onClick={() =>
+                  addFriend(profile)
+                }
+              >
+                <UserPlus size={16} />
+
+                Add
+              </button>
+
             </div>
 
-            <div>
-              <b>
-                Matches
-              </b>
+          )
+        )}
 
-              <small>
-                {formatNumber(game.games)} games played
-              </small>
-            </div>
+      </section>
+
+
+      {incoming.length > 0 && (
+
+        <section className="panel">
+
+          <div className="panel-head">
+
+            <h2>
+              Friend Requests
+            </h2>
+
+            <span className="pill">
+              {incoming.length}
+            </span>
 
           </div>
 
+          {incoming.map(item => {
 
-          <div className="gamecard">
+            const profile =
+              item.profile;
 
-            <div className="stat-icon">
-              <Trophy size={20} />
-            </div>
+            return (
+              <div
+                className="friend"
+                key={item.friendshipId}
+              >
 
-            <div>
-              <b>
-                Victories
-              </b>
+                <div className="avatar">
+                  {(
+                    profile.display_name ||
+                    profile.username
+                  )[0].toUpperCase()}
+                </div>
 
-              <small>
-                {formatNumber(game.wins)} wins •{' '}
-                {game.winRate.toFixed(1)}% win rate
-              </small>
-            </div>
+                <div>
 
-          </div>
+                  <b>
+                    {profile.display_name ||
+                      profile.username}
+                  </b>
+
+                  <small>
+                    @{profile.username}
+                  </small>
+
+                </div>
+
+                <button
+                  className="primary"
+                  onClick={() =>
+                    respond(
+                      item.friendshipId,
+                      'accepted'
+                    )
+                  }
+                >
+                  <Check size={16} />
+
+                  Accept
+                </button>
+
+                <button
+                  className="iconbtn"
+                  onClick={() =>
+                    respond(
+                      item.friendshipId,
+                      'rejected'
+                    )
+                  }
+                >
+                  <X size={16} />
+                </button>
+
+              </div>
+            );
+          })}
+
+        </section>
+
+      )}
 
 
-          <div className="gamecard">
+      <section className="panel">
 
-            <div className="stat-icon">
-              <Swords size={20} />
-            </div>
+        <div className="panel-head">
 
-            <div>
-              <b>
-                Combat
-              </b>
+          <h2>
+            My Friends
+          </h2>
 
-              <small>
-                {formatNumber(game.kills)} kills •{' '}
-                {formatNumber(game.deaths)} deaths •{' '}
-                {formatDecimal(game.kd)} K/D
-              </small>
-            </div>
-
-          </div>
-
-
-          <div className="gamecard">
-
-            <div className="stat-icon">
-              <Target size={20} />
-            </div>
-
-            <div>
-              <b>
-                Accuracy Milestone
-              </b>
-
-              <small>
-                {formatNumber(game.headshots)} headshots recorded
-              </small>
-            </div>
-
-          </div>
+          <span className="pill">
+            {friends.length}
+          </span>
 
         </div>
 
+        {loading ? (
+
+          <p className="muted">
+            Loading friends…
+          </p>
+
+        ) : friends.length === 0 ? (
+
+          <p className="muted">
+            You haven't added any friends yet.
+          </p>
+
+        ) : (
+
+          friends.map(item => {
+
+            const profile =
+              item.profile;
+
+            return (
+              <button
+                key={item.friendshipId}
+                style={{
+                  all: 'unset',
+                  display: 'block',
+                  width: '100%',
+                  cursor: 'pointer'
+                }}
+                onClick={() =>
+                  openFriend(
+                    profile,
+                    item.friendshipId
+                  )
+                }
+              >
+
+                <div className="friend">
+
+                  <div className="avatar">
+                    {(
+                      profile.display_name ||
+                      profile.username
+                    )[0].toUpperCase()}
+                  </div>
+
+                  <div>
+
+                    <b>
+                      {profile.display_name ||
+                        profile.username}
+                    </b>
+
+                    <small>
+                      @{profile.username}
+                    </small>
+
+                  </div>
+
+                  <ChevronRight size={18} />
+
+                </div>
+
+              </button>
+            );
+          })
+
+        )}
+
       </section>
+
+
+      {outgoing.length > 0 && (
+
+        <section className="panel">
+
+          <div className="panel-head">
+
+            <h2>
+              Sent Requests
+            </h2>
+
+          </div>
+
+          {outgoing.map(item => (
+            <div
+              className="friend"
+              key={item.friendshipId}
+            >
+
+              <div className="avatar">
+                {(
+                  item.profile.display_name ||
+                  item.profile.username
+                )[0].toUpperCase()}
+              </div>
+
+              <div>
+
+                <b>
+                  {item.profile.display_name ||
+                    item.profile.username}
+                </b>
+
+                <small>
+                  Pending
+                </small>
+
+              </div>
+
+            </div>
+          ))}
+
+        </section>
+
+      )}
+
+    </div>
+  );
+}
+
+
+/* =========================
+   FRIEND PROFILE
+========================= */
+
+function FriendProfile({
+  profile,
+  friendshipId,
+  back
+}) {
+  const [gameStats, setGameStats] =
+    useState([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [message, setMessage] =
+    useState('');
+
+
+  useEffect(() => {
+
+    async function load() {
+      try {
+        const stats =
+          await getGameStats(
+            profile.id
+          );
+
+        setGameStats(stats);
+
+      } catch (error) {
+        setMessage(
+          error.message ||
+          'Could not load stats.'
+        );
+
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
+
+  }, [profile.id]);
+
+
+  const totals =
+    useMemo(
+      () =>
+        calculateTotals(
+          gameStats
+        ),
+      [gameStats]
+    );
+
+
+  async function remove() {
+    try {
+      await removeFriend(
+        friendshipId
+      );
+
+      back();
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not remove friend.'
+      );
+    }
+  }
+
+
+  return (
+    <div className="page">
+
+      <button
+        className="linkbtn"
+        onClick={back}
+      >
+        <ChevronLeft size={18} />
+
+        Back to Friends
+      </button>
+
+
+      <div className="page-head">
+
+        <div>
+
+          <div className="eyebrow">
+            FRIEND PROFILE
+          </div>
+
+          <h1>
+            {profile.display_name ||
+              profile.username}
+          </h1>
+
+          <p>
+            @{profile.username}
+          </p>
+
+          {profile.title && (
+            <span className="pill">
+              {profile.title}
+            </span>
+          )}
+
+        </div>
+
+      </div>
+
+
+      {profile.bio && (
+        <section className="panel">
+
+          <h2>
+            Bio
+          </h2>
+
+          <p>
+            {profile.bio}
+          </p>
+
+        </section>
+      )}
+
+
+      {message && (
+        <div className="notice">
+          {message}
+        </div>
+      )}
+
+
+      <div className="stats">
+
+        <Stat
+          icon={Gamepad2}
+          label="Games"
+          value={
+            loading
+              ? '...'
+              : formatNumber(
+                  totals.games
+                )
+          }
+        />
+
+        <Stat
+          icon={Trophy}
+          label="Wins"
+          value={
+            loading
+              ? '...'
+              : formatNumber(
+                  totals.wins
+                )
+          }
+        />
+
+        <Stat
+          icon={Swords}
+          label="K/D"
+          value={
+            loading
+              ? '...'
+              : formatDecimal(
+                  totals.kd
+                )
+          }
+        />
+
+        <Stat
+          icon={Zap}
+          label="Kills / Game"
+          value={
+            loading
+              ? '...'
+              : formatDecimal(
+                  totals.kpg
+                )
+          }
+        />
+
+      </div>
+
+
+      <section className="panel">
+
+        <div className="panel-head">
+
+          <h2>
+            Game Stats
+          </h2>
+
+        </div>
+
+        {gameStats.length === 0 ? (
+
+          <p className="muted">
+            No game stats available yet.
+          </p>
+
+        ) : (
+
+          <div className="gamegrid">
+
+            {gameStats.map(game => (
+
+              <div
+                className="gamecard"
+                key={game.id}
+              >
+
+                <div className="glogo">
+                  {game.short}
+                </div>
+
+                <div>
+
+                  <b>
+                    {game.name}
+                  </b>
+
+                  <small>
+                    {formatNumber(
+                      game.games
+                    )} games •{' '}
+                    {formatNumber(
+                      game.wins
+                    )} wins
+                  </small>
+
+                </div>
+
+                <div className="kpg">
+
+                  <b>
+                    {formatDecimal(
+                      game.kpg
+                    )}
+                  </b>
+
+                  <small>
+                    KPG
+                  </small>
+
+                </div>
+
+              </div>
+
+            ))}
+
+          </div>
+
+        )}
+
+      </section>
+
+
+      <button
+        className="logout"
+        onClick={remove}
+        style={{
+          marginTop: '20px'
+        }}
+      >
+        Remove Friend
+      </button>
 
     </div>
   );
@@ -1286,6 +2134,7 @@ function ProfileSettings({
   const [message, setMessage] =
     useState('');
 
+
   useEffect(() => {
     setDisplayName(
       profile?.display_name || ''
@@ -1299,6 +2148,7 @@ function ProfileSettings({
       profile?.title || ''
     );
   }, [profile]);
+
 
   async function saveProfile(e) {
     e.preventDefault();
@@ -1317,20 +2167,25 @@ function ProfileSettings({
           }
         );
 
-      onProfileUpdated(updated);
+      onProfileUpdated(
+        updated
+      );
 
       setMessage(
         'Profile saved successfully.'
       );
+
     } catch (error) {
       setMessage(
         error.message ||
         'Could not save profile.'
       );
+
     } finally {
       setSaving(false);
     }
   }
+
 
   return (
     <div className="page">
@@ -1338,6 +2193,7 @@ function ProfileSettings({
       <div className="page-head">
 
         <div>
+
           <div className="eyebrow">
             PLAYER PROFILE
           </div>
@@ -1349,16 +2205,12 @@ function ProfileSettings({
           <p>
             Customize your FragRank identity.
           </p>
+
         </div>
 
       </div>
 
-      <section
-        className="panel"
-        style={{
-          maxWidth: '700px'
-        }}
-      >
+      <section className="panel">
 
         <form onSubmit={saveProfile}>
 
@@ -1378,10 +2230,11 @@ function ProfileSettings({
 
             <input
               value={displayName}
-              onChange={(e) =>
-                setDisplayName(e.target.value)
+              onChange={e =>
+                setDisplayName(
+                  e.target.value
+                )
               }
-              maxLength={40}
             />
           </label>
 
@@ -1390,10 +2243,11 @@ function ProfileSettings({
 
             <input
               value={title}
-              onChange={(e) =>
-                setTitle(e.target.value)
+              onChange={e =>
+                setTitle(
+                  e.target.value
+                )
               }
-              maxLength={40}
               placeholder="Example: FragRank Founder"
             />
           </label>
@@ -1403,10 +2257,11 @@ function ProfileSettings({
 
             <input
               value={bio}
-              onChange={(e) =>
-                setBio(e.target.value)
+              onChange={e =>
+                setBio(
+                  e.target.value
+                )
               }
-              maxLength={160}
             />
           </label>
 
@@ -1437,7 +2292,7 @@ function ProfileSettings({
 
 
 /* =========================
-   FUTURE PAGES
+   PLACEHOLDER PAGES
 ========================= */
 
 function Foundation({
@@ -1451,6 +2306,7 @@ function Foundation({
       <div className="page-head">
 
         <div>
+
           <div className="eyebrow">
             FRAGRANK V2
           </div>
@@ -1462,6 +2318,7 @@ function Foundation({
           <p>
             {description}
           </p>
+
         </div>
 
       </div>
@@ -1475,7 +2332,7 @@ function Foundation({
         </h2>
 
         <p>
-          This feature will be connected to live Supabase data during the next development phases.
+          This feature will be connected to live data next.
         </p>
 
       </section>
@@ -1486,7 +2343,7 @@ function Foundation({
 
 
 /* =========================
-   MAIN APP
+   APP
 ========================= */
 
 function App() {
@@ -1514,6 +2371,12 @@ function App() {
   const [selectedGame, setSelectedGame] =
     useState(null);
 
+  const [selectedFriend, setSelectedFriend] =
+    useState(null);
+
+  const [selectedFriendshipId, setSelectedFriendshipId] =
+    useState(null);
+
   const [open, setOpen] =
     useState(false);
 
@@ -1526,53 +2389,32 @@ function App() {
 
     try {
       const playerProfile =
-        await getMyProfile(user);
+        await getProfile(
+          user.id
+        );
 
-      setProfile(playerProfile);
-
-      const playerStats =
-        await getMyGameStats(user);
-
-      setGameStats(playerStats);
-
-    } catch (error) {
-      console.error(
-        'FragRank data load failed:',
-        error
+      setProfile(
+        playerProfile
       );
 
+      const playerStats =
+        await getGameStats(
+          user.id
+        );
+
+      setGameStats(
+        playerStats
+      );
+
+    } catch (error) {
       setStatsError(
         error.message ||
         'Unknown Supabase error'
       );
 
-      setGameStats([]);
-
     } finally {
       setStatsLoading(false);
     }
-  }
-
-
-  function openGame(game) {
-    setSelectedGame(game);
-    setPage('game-detail');
-
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    });
-  }
-
-
-  function closeGame() {
-    setSelectedGame(null);
-    setPage('stats');
-
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    });
   }
 
 
@@ -1584,28 +2426,23 @@ function App() {
         const {
           data: {
             session: currentSession
-          },
-          error
+          }
         } =
           await supabase.auth.getSession();
 
-        if (error) throw error;
-
         if (!alive) return;
 
-        setSession(currentSession);
+        setSession(
+          currentSession
+        );
 
-        if (currentSession?.user) {
+        if (
+          currentSession?.user
+        ) {
           await loadPlayerData(
             currentSession.user
           );
         }
-
-      } catch (error) {
-        console.error(
-          'FragRank startup error:',
-          error
-        );
 
       } finally {
         if (alive) {
@@ -1616,6 +2453,7 @@ function App() {
 
     start();
 
+
     const {
       data: {
         subscription
@@ -1624,21 +2462,23 @@ function App() {
       supabase.auth.onAuthStateChange(
         (_event, nextSession) => {
 
-          setSession(nextSession);
+          setSession(
+            nextSession
+          );
 
-          if (nextSession?.user) {
+          if (
+            nextSession?.user
+          ) {
             setTimeout(() => {
               loadPlayerData(
                 nextSession.user
               );
             }, 0);
-          } else {
-            setProfile(null);
-            setGameStats([]);
           }
 
         }
       );
+
 
     return () => {
       alive = false;
@@ -1651,7 +2491,9 @@ function App() {
   const totals =
     useMemo(
       () =>
-        calculateTotals(gameStats),
+        calculateTotals(
+          gameStats
+        ),
       [gameStats]
     );
 
@@ -1673,13 +2515,41 @@ function App() {
   const displayName =
     profile?.display_name ||
     profile?.username ||
-    session.user
-      .user_metadata
-      ?.display_name ||
-    session.user
-      .user_metadata
-      ?.username ||
     'Player';
+
+
+  function openGame(game) {
+    setSelectedGame(game);
+    setPage('game-detail');
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  }
+
+
+  function openFriend(
+    friend,
+    friendshipId
+  ) {
+    setSelectedFriend(
+      friend
+    );
+
+    setSelectedFriendshipId(
+      friendshipId
+    );
+
+    setPage(
+      'friend-profile'
+    );
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  }
 
 
   const nav = [
@@ -1715,7 +2585,9 @@ function App() {
       <ProfileSettings
         user={session.user}
         profile={profile}
-        onProfileUpdated={setProfile}
+        onProfileUpdated={
+          setProfile
+        }
       />
     ),
 
@@ -1723,7 +2595,6 @@ function App() {
       <Stats
         totals={totals}
         gameStats={gameStats}
-        statsLoading={statsLoading}
         openGame={openGame}
       />
     ),
@@ -1731,15 +2602,31 @@ function App() {
     'game-detail': (
       <GameDetail
         game={selectedGame}
-        back={closeGame}
+        back={() => {
+          setPage('stats');
+          setSelectedGame(null);
+        }}
       />
     ),
 
     friends: (
-      <Foundation
-        title="Friends"
-        Icon={Users}
-        description="Friend requests, friend profiles, and friend leaderboards."
+      <FriendsPage
+        user={session.user}
+        openFriend={openFriend}
+      />
+    ),
+
+    'friend-profile': (
+      <FriendProfile
+        profile={selectedFriend}
+        friendshipId={
+          selectedFriendshipId
+        }
+        back={() => {
+          setSelectedFriend(null);
+          setSelectedFriendshipId(null);
+          setPage('friends');
+        }}
       />
     ),
 
@@ -1755,7 +2642,7 @@ function App() {
       <Foundation
         title="Achievements"
         Icon={Award}
-        description="Milestones, rarity, progression, and achievement rewards."
+        description="Milestones and progression."
       />
     ),
 
@@ -1771,7 +2658,7 @@ function App() {
       <Foundation
         title="Tournaments"
         Icon={Trophy}
-        description="Custom tournaments and competitive brackets."
+        description="Custom tournaments and brackets."
       />
     ),
 
@@ -1787,7 +2674,7 @@ function App() {
       <Foundation
         title="Activity Feed"
         Icon={Activity}
-        description="Posts, clips, reactions, comments, and player activity."
+        description="Posts, clips, reactions, and comments."
       />
     )
 
@@ -1843,14 +2730,20 @@ function App() {
                     : ''
                 }
                 onClick={() => {
+
                   setPage(id);
+
                   setSelectedGame(null);
+                  setSelectedFriend(null);
+
                   setOpen(false);
                 }}
               >
+
                 <Icon size={18} />
 
                 {label}
+
               </button>
 
             )
@@ -1865,9 +2758,11 @@ function App() {
         <div className="mini-profile">
 
           <div className="avatar">
+
             {displayName
               .charAt(0)
               .toUpperCase()}
+
           </div>
 
           <div>
@@ -1877,7 +2772,9 @@ function App() {
             </b>
 
             <small>
-              {formatNumber(totals.games)} games
+              {formatNumber(
+                totals.games
+              )} games
             </small>
 
           </div>
@@ -1889,9 +2786,11 @@ function App() {
           className="logout"
           onClick={signOut}
         >
+
           <LogOut size={17} />
 
           Sign out
+
         </button>
 
       </aside>
@@ -1930,10 +2829,9 @@ function App() {
 
             <button
               className="iconbtn"
-              onClick={() => {
-                setPage('profile');
-                setSelectedGame(null);
-              }}
+              onClick={() =>
+                setPage('profile')
+              }
             >
               <Settings size={18} />
             </button>
