@@ -29,88 +29,36 @@ import { signIn, signOut, signUp } from './auth';
 import './styles.css';
 
 /* =========================================================
-   FRAGRANK DEMO DATA
-
-   Game statistics remain demo data until we connect
-   supported gaming APIs.
-
-   User profile information comes from Supabase.
+   HELPERS
 ========================================================= */
 
-const demo = {
-  games: 1842,
-  wins: 988,
-  kills: 12648,
-  deaths: 1842,
-  kpg: 6.87,
-  streak: 8,
-  rank: 'Diamond'
-};
+function number(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
 
-const games = [
-  {
-    name: 'Call of Duty',
-    short: 'COD',
-    games: 742,
-    wins: 411,
-    kills: 5582,
-    kpg: 7.52
-  },
-  {
-    name: 'Fortnite',
-    short: 'FN',
-    games: 613,
-    wins: 328,
-    kills: 3940,
-    kpg: 6.43
-  },
-  {
-    name: 'Apex Legends',
-    short: 'APEX',
-    games: 487,
-    wins: 249,
-    kills: 3126,
-    kpg: 6.42
-  }
-];
+function formatNumber(value) {
+  return number(value).toLocaleString();
+}
 
-const friends = [
-  {
-    name: 'Nova',
-    rank: 'Diamond',
-    kpg: 7.41,
-    wins: 62,
-    online: true
-  },
-  {
-    name: 'Rogue',
-    rank: 'Platinum',
-    kpg: 6.98,
-    wins: 58,
-    online: true
-  },
-  {
-    name: 'Jett',
-    rank: 'Diamond',
-    kpg: 6.81,
-    wins: 55,
-    online: false
-  },
-  {
-    name: 'Vex',
-    rank: 'Gold',
-    kpg: 5.92,
-    wins: 47,
-    online: false
-  }
-];
+function formatDecimal(value) {
+  return number(value).toFixed(2);
+}
 
-const achievements = [
-  ['First Blood', 'Get your first elimination.', 'Common', 10],
-  ['On Fire', 'Win 5 games in a row.', 'Rare', 25],
-  ['Sharpshooter', 'Reach 1,000 headshots.', 'Epic', 50],
-  ['Unstoppable', 'Reach a 10-win streak.', 'Legendary', 100]
-];
+function shortGameName(name = '') {
+  const lower = name.toLowerCase();
+
+  if (lower.includes('call of duty')) return 'COD';
+  if (lower.includes('fortnite')) return 'FN';
+  if (lower.includes('apex')) return 'APEX';
+
+  return name
+    .split(' ')
+    .map((word) => word[0])
+    .join('')
+    .slice(0, 5)
+    .toUpperCase();
+}
 
 /* =========================================================
    SUPABASE PROFILE
@@ -134,7 +82,109 @@ async function getMyProfile(user) {
 }
 
 /* =========================================================
-   AUTHENTICATION
+   SUPABASE GAME STATS
+========================================================= */
+
+async function getMyGameStats(user) {
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from('game_stats')
+    .select(`
+      id,
+      games_played,
+      wins,
+      kills,
+      deaths,
+      headshots,
+      updated_at,
+      game:games (
+        id,
+        name
+      )
+    `)
+    .eq('user_id', user.id);
+
+  if (error) {
+    console.error('Could not load game stats:', error);
+    throw error;
+  }
+
+  return (data || []).map((row) => {
+    const gamesPlayed = number(row.games_played);
+    const wins = number(row.wins);
+    const kills = number(row.kills);
+    const deaths = number(row.deaths);
+
+    return {
+      id: row.id,
+      gameId: row.game?.id,
+      name: row.game?.name || 'Unknown Game',
+      short: shortGameName(row.game?.name || 'Game'),
+      games: gamesPlayed,
+      wins,
+      kills,
+      deaths,
+      headshots: number(row.headshots),
+      winRate:
+        gamesPlayed > 0
+          ? (wins / gamesPlayed) * 100
+          : 0,
+      kpg:
+        gamesPlayed > 0
+          ? kills / gamesPlayed
+          : 0,
+      kd:
+        deaths > 0
+          ? kills / deaths
+          : kills,
+      updatedAt: row.updated_at
+    };
+  });
+}
+
+function calculateTotals(gameStats) {
+  const totals = gameStats.reduce(
+    (result, game) => {
+      result.games += number(game.games);
+      result.wins += number(game.wins);
+      result.kills += number(game.kills);
+      result.deaths += number(game.deaths);
+      result.headshots += number(game.headshots);
+
+      return result;
+    },
+    {
+      games: 0,
+      wins: 0,
+      kills: 0,
+      deaths: 0,
+      headshots: 0
+    }
+  );
+
+  return {
+    ...totals,
+
+    winRate:
+      totals.games > 0
+        ? (totals.wins / totals.games) * 100
+        : 0,
+
+    kpg:
+      totals.games > 0
+        ? totals.kills / totals.games
+        : 0,
+
+    kd:
+      totals.deaths > 0
+        ? totals.kills / totals.deaths
+        : totals.kills
+  };
+}
+
+/* =========================================================
+   AUTH
 ========================================================= */
 
 function Auth() {
@@ -183,7 +233,9 @@ function Auth() {
     <div className="auth-page">
       <div className="auth-card">
 
-        <div className="brand-mark">F</div>
+        <div className="brand-mark">
+          F
+        </div>
 
         <div className="brand">
           FRAGRANK
@@ -332,7 +384,10 @@ function Stat({
 }
 
 /* =========================================================
-   PERFORMANCE CHART
+   TREND CHART
+
+   Historical chart is still placeholder data until we
+   store historical game-stat snapshots.
 ========================================================= */
 
 function Chart() {
@@ -395,7 +450,10 @@ function Chart() {
 function Dashboard({
   setPage,
   user,
-  profile
+  profile,
+  totals,
+  gameStats,
+  statsLoading
 }) {
   const playerName =
     profile?.display_name ||
@@ -437,10 +495,9 @@ function Dashboard({
       </div>
 
       <div className="demo-note">
-        Your FragRank profile is connected to
-        Supabase. Game statistics remain demo
-        values until supported game APIs are
-        connected.
+        Your profile and stored game statistics are now connected
+        to Supabase. Rank, streak, and the performance-history
+        chart will be connected in a later step.
       </div>
 
       <div className="stats">
@@ -448,32 +505,45 @@ function Dashboard({
         <Stat
           icon={Gamepad2}
           label="Total Games"
-          value={demo.games.toLocaleString()}
-          sub="+24 this week"
+          value={
+            statsLoading
+              ? '...'
+              : formatNumber(totals.games)
+          }
+          sub="Stored in Supabase"
         />
 
         <Stat
           icon={Trophy}
           label="Win Rate"
-          value={`${(
-            (demo.wins / demo.games) *
-            100
-          ).toFixed(1)}%`}
-          sub="+2.1% this month"
+          value={
+            statsLoading
+              ? '...'
+              : `${totals.winRate.toFixed(1)}%`
+          }
+          sub={`${formatNumber(totals.wins)} wins`}
         />
 
         <Stat
           icon={Swords}
           label="Total Kills"
-          value={demo.kills.toLocaleString()}
-          sub="+418 this week"
+          value={
+            statsLoading
+              ? '...'
+              : formatNumber(totals.kills)
+          }
+          sub={`${formatNumber(totals.deaths)} deaths`}
         />
 
         <Stat
           icon={Zap}
           label="Kills / Game"
-          value={demo.kpg}
-          sub="Personal best 9.82"
+          value={
+            statsLoading
+              ? '...'
+              : formatDecimal(totals.kpg)
+          }
+          sub={`K/D ${formatDecimal(totals.kd)}`}
         />
 
       </div>
@@ -490,12 +560,12 @@ function Dashboard({
               </h2>
 
               <span>
-                Recent performance trend
+                Historical trend placeholder
               </span>
             </div>
 
             <span className="pill">
-              +8.4%
+              {formatDecimal(totals.kpg)} KPG
             </span>
 
           </div>
@@ -514,21 +584,23 @@ function Dashboard({
             CURRENT RANK
           </span>
 
-          <h2>{demo.rank}</h2>
+          <h2>
+            Unranked
+          </h2>
 
           <div className="progress">
-            <i />
+            <i style={{ width: '0%' }} />
           </div>
 
           <div className="progress-label">
-            <span>2,410 XP</span>
-            <span>3,250 XP</span>
+            <span>0 XP</span>
+            <span>Rank system next</span>
           </div>
 
           <div className="streak">
             <Zap size={17} />
 
-            {demo.streak} win streak
+            Streak tracking coming
           </div>
 
         </section>
@@ -545,7 +617,7 @@ function Dashboard({
             </h2>
 
             <span>
-              Your strongest games at a glance
+              Stats stored for each connected game
             </span>
           </div>
 
@@ -562,47 +634,60 @@ function Dashboard({
 
         </div>
 
-        <div className="gamegrid">
+        {statsLoading ? (
+          <p className="muted">
+            Loading game statistics…
+          </p>
+        ) : gameStats.length === 0 ? (
+          <p className="muted">
+            No game stats have been added to your FragRank
+            account yet.
+          </p>
+        ) : (
+          <div className="gamegrid">
 
-          {games.map((g) => (
+            {gameStats.map((g) => (
 
-            <div
-              className="gamecard"
-              key={g.short}
-            >
+              <div
+                className="gamecard"
+                key={`${g.gameId}-${g.id}`}
+              >
 
-              <div className="glogo">
-                {g.short}
+                <div className="glogo">
+                  {g.short}
+                </div>
+
+                <div>
+
+                  <b>
+                    {g.name}
+                  </b>
+
+                  <small>
+                    {formatNumber(g.games)} games •{' '}
+                    {formatNumber(g.wins)} wins
+                  </small>
+
+                </div>
+
+                <div className="kpg">
+
+                  <b>
+                    {formatDecimal(g.kpg)}
+                  </b>
+
+                  <small>
+                    KPG
+                  </small>
+
+                </div>
+
               </div>
 
-              <div>
+            ))}
 
-                <b>
-                  {g.name}
-                </b>
-
-                <small>
-                  {g.games} games •{' '}
-                  {g.wins} wins
-                </small>
-
-              </div>
-
-              <div className="kpg">
-
-                <b>{g.kpg}</b>
-
-                <small>
-                  KPG
-                </small>
-
-              </div>
-
-            </div>
-
-          ))}
-
-        </div>
+          </div>
+        )}
 
       </section>
 
@@ -611,10 +696,14 @@ function Dashboard({
 }
 
 /* =========================================================
-   STATS
+   STATS PAGE
 ========================================================= */
 
-function Stats() {
+function Stats({
+  totals,
+  gameStats,
+  statsLoading
+}) {
   return (
     <div className="page">
 
@@ -631,7 +720,7 @@ function Stats() {
           </h1>
 
           <p>
-            Break down performance by game.
+            Your stored Supabase statistics by game.
           </p>
 
         </div>
@@ -643,25 +732,41 @@ function Stats() {
         <Stat
           icon={Gamepad2}
           label="Games Played"
-          value={demo.games.toLocaleString()}
+          value={
+            statsLoading
+              ? '...'
+              : formatNumber(totals.games)
+          }
         />
 
         <Stat
           icon={Trophy}
           label="Wins"
-          value={demo.wins.toLocaleString()}
+          value={
+            statsLoading
+              ? '...'
+              : formatNumber(totals.wins)
+          }
         />
 
         <Stat
           icon={Swords}
           label="K/D"
-          value={demo.kpg}
+          value={
+            statsLoading
+              ? '...'
+              : formatDecimal(totals.kd)
+          }
         />
 
         <Stat
           icon={Zap}
-          label="Win Streak"
-          value={demo.streak}
+          label="Kills / Game"
+          value={
+            statsLoading
+              ? '...'
+              : formatDecimal(totals.kpg)
+          }
         />
 
       </div>
@@ -675,7 +780,7 @@ function Stats() {
           </h2>
 
           <span>
-            Demo values until live APIs are connected
+            Live data from your FragRank database
           </span>
 
         </div>
@@ -692,6 +797,8 @@ function Stats() {
                 <th>Wins</th>
                 <th>Win Rate</th>
                 <th>Kills</th>
+                <th>Deaths</th>
+                <th>K/D</th>
                 <th>KPG</th>
               </tr>
 
@@ -699,42 +806,55 @@ function Stats() {
 
             <tbody>
 
-              {games.map((g) => (
-
-                <tr key={g.short}>
-
-                  <td>
-                    <b>{g.name}</b>
+              {gameStats.length === 0 ? (
+                <tr>
+                  <td colSpan="8">
+                    No game statistics have been stored yet.
                   </td>
-
-                  <td>
-                    {g.games}
-                  </td>
-
-                  <td>
-                    {g.wins}
-                  </td>
-
-                  <td>
-                    {(
-                      (g.wins /
-                        g.games) *
-                      100
-                    ).toFixed(1)}
-                    %
-                  </td>
-
-                  <td>
-                    {g.kills.toLocaleString()}
-                  </td>
-
-                  <td className="accent">
-                    {g.kpg}
-                  </td>
-
                 </tr>
+              ) : (
+                gameStats.map((g) => (
 
-              ))}
+                  <tr
+                    key={`${g.gameId}-${g.id}`}
+                  >
+
+                    <td>
+                      <b>{g.name}</b>
+                    </td>
+
+                    <td>
+                      {formatNumber(g.games)}
+                    </td>
+
+                    <td>
+                      {formatNumber(g.wins)}
+                    </td>
+
+                    <td>
+                      {g.winRate.toFixed(1)}%
+                    </td>
+
+                    <td>
+                      {formatNumber(g.kills)}
+                    </td>
+
+                    <td>
+                      {formatNumber(g.deaths)}
+                    </td>
+
+                    <td>
+                      {formatDecimal(g.kd)}
+                    </td>
+
+                    <td className="accent">
+                      {formatDecimal(g.kpg)}
+                    </td>
+
+                  </tr>
+
+                ))
+              )}
 
             </tbody>
 
@@ -753,9 +873,40 @@ function Stats() {
 ========================================================= */
 
 function Friends() {
+  const demoFriends = [
+    {
+      name: 'Nova',
+      rank: 'Diamond',
+      kpg: 7.41,
+      wins: 62,
+      online: true
+    },
+    {
+      name: 'Rogue',
+      rank: 'Platinum',
+      kpg: 6.98,
+      wins: 58,
+      online: true
+    },
+    {
+      name: 'Jett',
+      rank: 'Diamond',
+      kpg: 6.81,
+      wins: 55,
+      online: false
+    },
+    {
+      name: 'Vex',
+      rank: 'Gold',
+      kpg: 5.92,
+      wins: 47,
+      online: false
+    }
+  ];
+
   const sorted = useMemo(
     () =>
-      [...friends].sort(
+      [...demoFriends].sort(
         (a, b) =>
           b.kpg - a.kpg
       ),
@@ -778,7 +929,7 @@ function Friends() {
           </h1>
 
           <p>
-            Compare stats and see who is dominating.
+            Friend data will be wired to Supabase next.
           </p>
 
         </div>
@@ -800,7 +951,7 @@ function Friends() {
           </h2>
 
           <span className="pill">
-            KPG
+            DEMO
           </span>
 
         </div>
@@ -874,15 +1025,6 @@ function Friends() {
 ========================================================= */
 
 function Leaderboard() {
-  const rows = [
-    ['Nova', 'Diamond', 7.91],
-    ['FragLord', 'Diamond', 7.72],
-    ['You', 'Diamond', 6.87],
-    ['Rogue', 'Platinum', 6.98],
-    ['Jett', 'Diamond', 6.81],
-    ['Vex', 'Gold', 5.92]
-  ];
-
   return (
     <div className="page">
 
@@ -899,101 +1041,27 @@ function Leaderboard() {
           </h1>
 
           <p>
-            Climb the rankings and prove you belong.
+            Global leaderboard data will be wired to Supabase
+            after game stats are verified.
           </p>
 
         </div>
 
       </div>
 
-      <div className="tabs">
+      <section className="panel coming">
 
-        <button className="active">
-          All Players
-        </button>
+        <Globe2 size={44} />
 
-        <button>
-          Call of Duty
-        </button>
+        <h2>
+          Leaderboard foundation ready
+        </h2>
 
-        <button>
-          Fortnite
-        </button>
-
-        <button>
-          Apex Legends
-        </button>
-
-      </div>
-
-      <section className="panel tablepanel">
-
-        <div className="tablewrap">
-
-          <table>
-
-            <thead>
-
-              <tr>
-                <th>Rank</th>
-                <th>Player</th>
-                <th>Tier</th>
-                <th>KPG</th>
-                <th>Status</th>
-              </tr>
-
-            </thead>
-
-            <tbody>
-
-              {rows.map((r, i) => (
-
-                <tr
-                  className={
-                    r[0] === 'You'
-                      ? 'you'
-                      : ''
-                  }
-                  key={r[0]}
-                >
-
-                  <td>
-                    #{i + 1}
-                  </td>
-
-                  <td>
-                    <b>{r[0]}</b>
-                  </td>
-
-                  <td>
-                    <span className="chip">
-                      {r[1]}
-                    </span>
-                  </td>
-
-                  <td className="accent">
-                    {r[2]}
-                  </td>
-
-                  <td>
-                    {r[0] === 'You' ? (
-                      <span className="youpill">
-                        YOU
-                      </span>
-                    ) : (
-                      'Ranked'
-                    )}
-                  </td>
-
-                </tr>
-
-              ))}
-
-            </tbody>
-
-          </table>
-
-        </div>
+        <p>
+          Once multiple players have stored statistics,
+          FragRank can calculate real rankings from those
+          database records.
+        </p>
 
       </section>
 
@@ -1022,78 +1090,34 @@ function Achievements() {
           </h1>
 
           <p>
-            Milestones earned across your competitive journey.
+            Achievement data will be wired to Supabase later.
           </p>
 
         </div>
 
-        <div className="achievement-points">
-
-          <Award size={17} />
-
-          185 points
-
-        </div>
-
       </div>
 
-      <div className="achievement-grid">
+      <section className="panel coming">
 
-        {achievements.map(
-          (a, i) => (
+        <Award size={44} />
 
-            <div
-              className={`achievement ${
-                i < 2
-                  ? 'unlocked'
-                  : ''
-              }`}
-              key={a[0]}
-            >
+        <h2>
+          Achievement system foundation ready
+        </h2>
 
-              <div className="ach-icon">
-                <Award />
-              </div>
+        <p>
+          Your database already has achievements and
+          user-achievement records ready to be connected.
+        </p>
 
-              <div>
-
-                <span>
-                  {a[2]}
-                </span>
-
-                <h3>
-                  {a[0]}
-                </h3>
-
-                <p>
-                  {a[1]}
-                </p>
-
-                <b>
-                  {a[3]} XP
-                </b>
-
-              </div>
-
-              <strong>
-                {i < 2
-                  ? '✓'
-                  : '○'}
-              </strong>
-
-            </div>
-
-          )
-        )}
-
-      </div>
+      </section>
 
     </div>
   );
 }
 
 /* =========================================================
-   V2 PLACEHOLDER FEATURES
+   PLACEHOLDER V2 PAGES
 ========================================================= */
 
 function Foundation({
@@ -1133,10 +1157,9 @@ function Foundation({
         </h2>
 
         <p>
-          The V2 database schema contains the backend
-          foundation needed for this feature. We will
-          connect this screen to live Supabase data as
-          we continue building FragRank.
+          The Supabase database foundation already exists
+          for this feature. We will wire its interface to
+          live data as development continues.
         </p>
 
       </section>
@@ -1156,7 +1179,13 @@ function App() {
   const [profile, setProfile] =
     useState(null);
 
+  const [gameStats, setGameStats] =
+    useState([]);
+
   const [loading, setLoading] =
+    useState(true);
+
+  const [statsLoading, setStatsLoading] =
     useState(true);
 
   const [page, setPage] =
@@ -1165,37 +1194,74 @@ function App() {
   const [open, setOpen] =
     useState(false);
 
+  async function loadPlayerData(user) {
+    if (!user) {
+      setProfile(null);
+      setGameStats([]);
+      setStatsLoading(false);
+      return;
+    }
+
+    setStatsLoading(true);
+
+    try {
+      const [
+        playerProfile,
+        playerStats
+      ] = await Promise.all([
+        getMyProfile(user),
+        getMyGameStats(user)
+      ]);
+
+      setProfile(playerProfile);
+      setGameStats(playerStats);
+
+    } catch (error) {
+      console.error(
+        'Could not load FragRank player data:',
+        error
+      );
+
+      setGameStats([]);
+
+    } finally {
+      setStatsLoading(false);
+    }
+  }
+
   useEffect(() => {
     let mounted = true;
 
     async function initialize() {
       try {
         const {
-          data: { session }
+          data: { session: initialSession },
+          error
         } =
           await supabase.auth.getSession();
 
+        if (error) {
+          throw error;
+        }
+
         if (!mounted) return;
 
-        setSession(session);
+        setSession(initialSession);
 
-        if (session?.user) {
-          const playerProfile =
-            await getMyProfile(
-              session.user
-            );
-
-          if (mounted) {
-            setProfile(
-              playerProfile
-            );
-          }
+        if (initialSession?.user) {
+          await loadPlayerData(
+            initialSession.user
+          );
+        } else {
+          setStatsLoading(false);
         }
+
       } catch (error) {
         console.error(
           'FragRank initialization error:',
           error
         );
+
       } finally {
         if (mounted) {
           setLoading(false);
@@ -1209,22 +1275,21 @@ function App() {
       data: { subscription }
     } =
       supabase.auth.onAuthStateChange(
-        async (_event, newSession) => {
+        async (
+          _event,
+          newSession
+        ) => {
+
           setSession(newSession);
 
           if (newSession?.user) {
-            const playerProfile =
-              await getMyProfile(
-                newSession.user
-              );
-
-            if (mounted) {
-              setProfile(
-                playerProfile
-              );
-            }
+            await loadPlayerData(
+              newSession.user
+            );
           } else {
             setProfile(null);
+            setGameStats([]);
+            setStatsLoading(false);
           }
 
           if (mounted) {
@@ -1239,6 +1304,12 @@ function App() {
     };
   }, []);
 
+  const totals = useMemo(
+    () =>
+      calculateTotals(gameStats),
+    [gameStats]
+  );
+
   if (loading) {
     return (
       <div className="loading">
@@ -1250,6 +1321,17 @@ function App() {
   if (!session) {
     return <Auth />;
   }
+
+  const displayName =
+    profile?.display_name ||
+    profile?.username ||
+    session.user
+      .user_metadata
+      ?.display_name ||
+    session.user
+      .user_metadata
+      ?.username ||
+    'Player';
 
   const nav = [
     [
@@ -1305,12 +1387,22 @@ function App() {
         setPage={setPage}
         user={session.user}
         profile={profile}
+        totals={totals}
+        gameStats={gameStats}
+        statsLoading={statsLoading}
       />
     ),
 
-    stats: <Stats />,
+    stats: (
+      <Stats
+        totals={totals}
+        gameStats={gameStats}
+        statsLoading={statsLoading}
+      />
+    ),
 
-    friends: <Friends />,
+    friends:
+      <Friends />,
 
     leaderboard:
       <Leaderboard />,
@@ -1350,17 +1442,6 @@ function App() {
       />
     )
   };
-
-  const displayName =
-    profile?.display_name ||
-    profile?.username ||
-    session.user
-      .user_metadata
-      ?.display_name ||
-    session.user
-      .user_metadata
-      ?.username ||
-    'Player';
 
   return (
     <div className="app">
@@ -1446,7 +1527,9 @@ function App() {
             </b>
 
             <small>
-              {demo.rank}
+              {formatNumber(
+                totals.games
+              )} games
             </small>
 
           </div>
