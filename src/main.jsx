@@ -34,9 +34,9 @@ import { signIn, signOut, signUp } from './auth';
 import './styles.css';
 
 
-/* =========================
+/* =========================================================
    HELPERS
-========================= */
+========================================================= */
 
 function number(value) {
   const n = Number(value);
@@ -67,9 +67,9 @@ function shortGameName(name = '') {
 }
 
 
-/* =========================
+/* =========================================================
    PROFILE
-========================= */
+========================================================= */
 
 async function getProfile(userId) {
   if (!userId) return null;
@@ -103,9 +103,9 @@ async function updateMyProfile(user, updates) {
 }
 
 
-/* =========================
+/* =========================================================
    GAME STATS
-========================= */
+========================================================= */
 
 async function getGameStats(userId) {
   if (!userId) return [];
@@ -137,7 +137,9 @@ async function getGameStats(userId) {
 
   const gameIds = [
     ...new Set(
-      statRows.map(row => row.game_id)
+      statRows
+        .map(row => row.game_id)
+        .filter(Boolean)
     )
   ];
 
@@ -206,7 +208,6 @@ function calculateTotals(gameStats) {
       result.kills += number(game.kills);
       result.deaths += number(game.deaths);
       result.headshots += number(game.headshots);
-
       return result;
     },
     {
@@ -239,9 +240,9 @@ function calculateTotals(gameStats) {
 }
 
 
-/* =========================
+/* =========================================================
    FRIENDS
-========================= */
+========================================================= */
 
 async function searchPlayers(text, currentUserId) {
   const query = text.trim();
@@ -369,8 +370,7 @@ async function getFriendships(userId) {
         ? row.addressee
         : row.requester;
 
-    const other =
-      profileMap[otherId];
+    const other = profileMap[otherId];
 
     if (!other) continue;
 
@@ -430,9 +430,9 @@ async function removeFriend(friendshipId) {
 }
 
 
-/* =========================
-   LEADERBOARD DATA
-========================= */
+/* =========================================================
+   LEADERBOARD
+========================================================= */
 
 async function loadOverallLeaderboard() {
   const { data, error } = await supabase
@@ -455,9 +455,196 @@ async function loadGameLeaderboard() {
 }
 
 
-/* =========================
+/* =========================================================
+   ACHIEVEMENTS
+========================================================= */
+
+const achievementRules = {
+  'First Blood': {
+    target: 1,
+    getValue: totals => totals.kills,
+    label: 'kills'
+  },
+
+  Winner: {
+    target: 100,
+    getValue: totals => totals.wins,
+    label: 'wins'
+  },
+
+  Veteran: {
+    target: 1000,
+    getValue: totals => totals.games,
+    label: 'games'
+  },
+
+  Sharpshooter: {
+    target: 1000,
+    getValue: totals => totals.headshots,
+    label: 'headshots'
+  },
+
+  'Killing Machine': {
+    target: 5000,
+    getValue: totals => totals.kills,
+    label: 'kills'
+  },
+
+  'Frag Master': {
+    target: 10000,
+    getValue: totals => totals.kills,
+    label: 'kills'
+  }
+};
+
+async function syncAchievements(
+  userId,
+  totals
+) {
+  const {
+    data: achievements,
+    error: achievementsError
+  } = await supabase
+    .from('achievements')
+    .select('*')
+    .order('points');
+
+  if (achievementsError) {
+    throw achievementsError;
+  }
+
+  const {
+    data: currentRows,
+    error: currentError
+  } = await supabase
+    .from('user_achievements')
+    .select('*')
+    .eq('user_id', userId);
+
+  if (currentError) {
+    throw currentError;
+  }
+
+  const currentMap = {};
+
+  for (const row of currentRows || []) {
+    currentMap[row.achievement_id] = row;
+  }
+
+  const updates = [];
+
+  for (const achievement of achievements || []) {
+    const rule =
+      achievementRules[achievement.name];
+
+    if (!rule) {
+      continue;
+    }
+
+    const currentValue =
+      number(
+        rule.getValue(totals)
+      );
+
+    const progress =
+      Math.min(
+        currentValue,
+        rule.target
+      );
+
+    const unlocked =
+      currentValue >= rule.target;
+
+    const existing =
+      currentMap[
+        achievement.id
+      ];
+
+    updates.push({
+      user_id: userId,
+      achievement_id: achievement.id,
+      progress: Math.floor(progress),
+
+      unlocked_at:
+        existing?.unlocked_at ||
+        (
+          unlocked
+            ? new Date().toISOString()
+            : null
+        )
+    });
+  }
+
+  if (updates.length) {
+    const { error } = await supabase
+      .from('user_achievements')
+      .upsert(
+        updates,
+        {
+          onConflict:
+            'user_id,achievement_id'
+        }
+      );
+
+    if (error) {
+      throw error;
+    }
+  }
+}
+
+async function getUserAchievements(
+  userId
+) {
+  const [
+    achievementsResult,
+    progressResult
+  ] = await Promise.all([
+    supabase
+      .from('achievements')
+      .select('*')
+      .order('points'),
+
+    supabase
+      .from('user_achievements')
+      .select('*')
+      .eq('user_id', userId)
+  ]);
+
+  if (achievementsResult.error) {
+    throw achievementsResult.error;
+  }
+
+  if (progressResult.error) {
+    throw progressResult.error;
+  }
+
+  const progressMap = {};
+
+  for (
+    const row
+    of progressResult.data || []
+  ) {
+    progressMap[
+      row.achievement_id
+    ] = row;
+  }
+
+  return (
+    achievementsResult.data || []
+  ).map(achievement => ({
+    ...achievement,
+
+    userProgress:
+      progressMap[
+        achievement.id
+      ] || null
+  }));
+}
+
+
+/* =========================================================
    AUTH
-========================= */
+========================================================= */
 
 function Auth() {
   const [mode, setMode] =
@@ -493,6 +680,7 @@ function Auth() {
           email,
           password
         );
+
       } else {
         await signUp({
           email,
@@ -507,11 +695,13 @@ function Auth() {
 
         setMode('login');
       }
+
     } catch (error) {
       setMsg(
         error.message ||
         'Something went wrong.'
       );
+
     } finally {
       setBusy(false);
     }
@@ -653,9 +843,9 @@ function Auth() {
 }
 
 
-/* =========================
+/* =========================================================
    STAT CARD
-========================= */
+========================================================= */
 
 function Stat({
   icon: Icon,
@@ -693,9 +883,9 @@ function Stat({
 }
 
 
-/* =========================
+/* =========================================================
    CHART
-========================= */
+========================================================= */
 
 function Chart() {
   const vals = [
@@ -766,9 +956,9 @@ function Chart() {
 }
 
 
-/* =========================
+/* =========================================================
    DASHBOARD
-========================= */
+========================================================= */
 
 function Dashboard({
   setPage,
@@ -951,8 +1141,15 @@ function Dashboard({
           </div>
 
           <div className="progress-label">
-            <span>0 XP</span>
-            <span>Rank system coming</span>
+
+            <span>
+              0 XP
+            </span>
+
+            <span>
+              Rank system coming
+            </span>
+
           </div>
 
         </section>
@@ -1055,9 +1252,9 @@ function Dashboard({
 }
 
 
-/* =========================
+/* =========================================================
    MY STATS
-========================= */
+========================================================= */
 
 function Stats({
   totals,
@@ -1171,9 +1368,7 @@ function Stats({
                 >
 
                   <td>
-                    <b>
-                      {game.name}
-                    </b>
+                    <b>{game.name}</b>
                   </td>
 
                   <td>
@@ -1235,9 +1430,9 @@ function Stats({
 }
 
 
-/* =========================
+/* =========================================================
    GAME DETAIL
-========================= */
+========================================================= */
 
 function GameDetail({
   game,
@@ -1248,17 +1443,17 @@ function GameDetail({
   return (
     <div className="page">
 
+      <button
+        className="linkbtn"
+        onClick={back}
+      >
+        <ChevronLeft size={18} />
+        Back to My Stats
+      </button>
+
       <div className="page-head">
 
         <div>
-
-          <button
-            className="linkbtn"
-            onClick={back}
-          >
-            <ChevronLeft size={18} />
-            Back to My Stats
-          </button>
 
           <div className="eyebrow">
             GAME DETAILS
@@ -1392,9 +1587,9 @@ function GameDetail({
 }
 
 
-/* =========================
-   LIVE LEADERBOARD
-========================= */
+/* =========================================================
+   LEADERBOARD PAGE
+========================================================= */
 
 function LeaderboardPage({
   currentUserId
@@ -1453,6 +1648,7 @@ function LeaderboardPage({
 
     if (gameFilter === 'Overall') {
       source = [...overallRows];
+
     } else {
       source = gameRows.filter(
         row =>
@@ -1488,9 +1684,17 @@ function LeaderboardPage({
   }
 
   function metricTitle() {
-    if (metric === 'kills') return 'KILLS';
-    if (metric === 'wins') return 'WINS';
-    if (metric === 'kd') return 'K/D';
+    if (metric === 'kills') {
+      return 'KILLS';
+    }
+
+    if (metric === 'wins') {
+      return 'WINS';
+    }
+
+    if (metric === 'kd') {
+      return 'K/D';
+    }
 
     return 'KPG';
   }
@@ -1790,7 +1994,6 @@ function LeaderboardPage({
         </div>
 
         {rows.map(row => {
-
           const playerName =
             row.display_name ||
             row.username ||
@@ -1856,9 +2059,343 @@ function LeaderboardPage({
 }
 
 
-/* =========================
+/* =========================================================
+   ACHIEVEMENTS PAGE
+========================================================= */
+
+function AchievementsPage({
+  user,
+  totals
+}) {
+  const [
+    achievements,
+    setAchievements
+  ] = useState([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState('');
+
+  async function load() {
+    setLoading(true);
+    setError('');
+
+    try {
+      await syncAchievements(
+        user.id,
+        totals
+      );
+
+      const rows =
+        await getUserAchievements(
+          user.id
+        );
+
+      setAchievements(rows);
+
+    } catch (err) {
+      setError(
+        err.message ||
+        'Could not load achievements.'
+      );
+
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, [
+    user.id,
+    totals.games,
+    totals.wins,
+    totals.kills,
+    totals.headshots
+  ]);
+
+  const unlocked =
+    achievements.filter(
+      achievement =>
+        Boolean(
+          achievement
+            .userProgress
+            ?.unlocked_at
+        )
+    );
+
+  const earnedPoints =
+    unlocked.reduce(
+      (sum, achievement) =>
+        sum +
+        number(
+          achievement.points
+        ),
+      0
+    );
+
+  const totalPossiblePoints =
+    achievements.reduce(
+      (sum, achievement) =>
+        sum +
+        number(
+          achievement.points
+        ),
+      0
+    );
+
+  function getProgress(
+    achievement
+  ) {
+    const rule =
+      achievementRules[
+        achievement.name
+      ];
+
+    if (!rule) {
+      return {
+        supported: false,
+        current: 0,
+        target: 0,
+        percent: 0,
+        label:
+          'Match-history tracking required'
+      };
+    }
+
+    const current =
+      number(
+        rule.getValue(totals)
+      );
+
+    const percent =
+      Math.min(
+        100,
+        rule.target > 0
+          ? (
+              current /
+              rule.target
+            ) * 100
+          : 0
+      );
+
+    return {
+      supported: true,
+      current,
+      target: rule.target,
+      percent,
+
+      label:
+        `${formatNumber(
+          Math.min(
+            current,
+            rule.target
+          )
+        )} / ${formatNumber(
+          rule.target
+        )} ${rule.label}`
+    };
+  }
+
+  return (
+    <div className="page">
+
+      <div className="page-head">
+
+        <div>
+
+          <div className="eyebrow">
+            PROGRESSION
+          </div>
+
+          <h1>
+            Achievements
+          </h1>
+
+          <p>
+            Unlock milestones by playing and climbing FragRank.
+          </p>
+
+        </div>
+
+        <div className="achievement-points">
+          <Award size={18} />
+
+          {earnedPoints} points
+        </div>
+
+      </div>
+
+      <div className="stats">
+
+        <Stat
+          icon={Award}
+          label="Unlocked"
+          value={`${unlocked.length} / ${achievements.length}`}
+        />
+
+        <Stat
+          icon={Trophy}
+          label="Achievement Points"
+          value={formatNumber(
+            earnedPoints
+          )}
+          sub={`${formatNumber(
+            totalPossiblePoints
+          )} possible`}
+        />
+
+        <Stat
+          icon={Swords}
+          label="Total Kills"
+          value={formatNumber(
+            totals.kills
+          )}
+        />
+
+        <Stat
+          icon={Target}
+          label="Headshots"
+          value={formatNumber(
+            totals.headshots
+          )}
+        />
+
+      </div>
+
+      {error && (
+        <div className="notice">
+          Achievements could not be loaded: {error}
+        </div>
+      )}
+
+      {loading ? (
+
+        <section className="panel">
+
+          <p className="muted">
+            Loading achievements…
+          </p>
+
+        </section>
+
+      ) : (
+
+        <div className="achievement-grid">
+
+          {achievements.map(
+            achievement => {
+
+              const progress =
+                getProgress(
+                  achievement
+                );
+
+              const isUnlocked =
+                Boolean(
+                  achievement
+                    .userProgress
+                    ?.unlocked_at
+                );
+
+              return (
+                <div
+                  key={achievement.id}
+                  className={`achievement ${
+                    isUnlocked
+                      ? 'unlocked'
+                      : ''
+                  }`}
+                >
+
+                  <div className="ach-icon">
+                    <Award />
+                  </div>
+
+                  <div
+                    style={{
+                      flex: 1
+                    }}
+                  >
+
+                    <span>
+                      {achievement.rarity}
+                    </span>
+
+                    <h3>
+                      {achievement.name}
+                    </h3>
+
+                    <p>
+                      {achievement.description}
+                    </p>
+
+                    <b>
+                      {achievement.points} points
+                    </b>
+
+                    {progress.supported ? (
+                      <>
+
+                        <div
+                          className="progress"
+                          style={{
+                            marginTop:
+                              '12px'
+                          }}
+                        >
+                          <i
+                            style={{
+                              width:
+                                `${progress.percent}%`
+                            }}
+                          />
+                        </div>
+
+                        <small>
+                          {progress.label}
+                        </small>
+
+                      </>
+                    ) : (
+
+                      <small>
+                        Match-history tracking required
+                      </small>
+
+                    )}
+
+                  </div>
+
+                  <strong
+                    style={{
+                      fontSize: '22px'
+                    }}
+                  >
+                    {isUnlocked
+                      ? '✓'
+                      : '○'}
+                  </strong>
+
+                </div>
+              );
+            }
+          )}
+
+        </div>
+
+      )}
+
+    </div>
+  );
+}
+
+
+/* =========================================================
    FRIENDS PAGE
-========================= */
+========================================================= */
 
 function FriendsPage({
   user,
@@ -2329,9 +2866,9 @@ function FriendsPage({
 }
 
 
-/* =========================
+/* =========================================================
    FRIEND PROFILE
-========================= */
+========================================================= */
 
 function FriendProfile({
   profile,
@@ -2597,9 +3134,9 @@ function FriendProfile({
 }
 
 
-/* =========================
+/* =========================================================
    PROFILE SETTINGS
-========================= */
+========================================================= */
 
 function ProfileSettings({
   user,
@@ -2622,7 +3159,6 @@ function ProfileSettings({
     useState('');
 
   useEffect(() => {
-
     setDisplayName(
       profile?.display_name || ''
     );
@@ -2634,7 +3170,6 @@ function ProfileSettings({
     setTitle(
       profile?.title || ''
     );
-
   }, [profile]);
 
   async function saveProfile(e) {
@@ -2778,9 +3313,9 @@ function ProfileSettings({
 }
 
 
-/* =========================
+/* =========================================================
    PLACEHOLDER PAGES
-========================= */
+========================================================= */
 
 function Foundation({
   title,
@@ -2829,9 +3364,9 @@ function Foundation({
 }
 
 
-/* =========================
+/* =========================================================
    APP
-========================= */
+========================================================= */
 
 function App() {
   const [session, setSession] =
@@ -2861,8 +3396,10 @@ function App() {
   const [selectedFriend, setSelectedFriend] =
     useState(null);
 
-  const [selectedFriendshipId, setSelectedFriendshipId] =
-    useState(null);
+  const [
+    selectedFriendshipId,
+    setSelectedFriendshipId
+  ] = useState(null);
 
   const [open, setOpen] =
     useState(false);
@@ -3125,10 +3662,9 @@ function App() {
     ),
 
     achievements: (
-      <Foundation
-        title="Achievements"
-        Icon={Award}
-        description="Milestones and progression."
+      <AchievementsPage
+        user={session.user}
+        totals={totals}
       />
     ),
 
