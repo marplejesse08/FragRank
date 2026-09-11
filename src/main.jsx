@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import {
   Activity,
   Award,
-  BarChart3,
+  BarChart3
   Bell,
   Check,
   ChevronLeft,
