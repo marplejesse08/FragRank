@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import {
   Activity,
   Award,
-  BarChart3
+  BarChart3,
   Bell,
   Check,
   ChevronLeft,
@@ -15,6 +15,7 @@ import {
   Home,
   LogOut,
   Menu,
+  RefreshCw,
   Save,
   Search,
   Settings,
@@ -66,6 +67,14 @@ function shortGameName(name = '') {
     .toUpperCase();
 }
 
+function getPlayerName(profile) {
+  return (
+    profile?.display_name ||
+    profile?.username ||
+    'Player'
+  );
+}
+
 
 /* =========================================================
    PROFILE
@@ -106,6 +115,42 @@ async function updateMyProfile(user, updates) {
 /* =========================================================
    GAME STATS
 ========================================================= */
+
+async function getGames() {
+  const { data, error } = await supabase
+    .from('games')
+    .select('id,name')
+    .order('id');
+
+  if (error) throw error;
+
+  return data || [];
+}
+
+async function getRawGameStat(userId, gameId) {
+  const { data, error } = await supabase
+    .from('game_stats')
+    .select(`
+      games_played,
+      wins,
+      kills,
+      deaths,
+      headshots
+    `)
+    .eq('user_id', userId)
+    .eq('game_id', gameId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return data || {
+    games_played: 0,
+    wins: 0,
+    kills: 0,
+    deaths: 0,
+    headshots: 0
+  };
+}
 
 async function getGameStats(userId) {
   if (!userId) return [];
@@ -537,9 +582,7 @@ async function syncAchievements(
     const rule =
       achievementRules[achievement.name];
 
-    if (!rule) {
-      continue;
-    }
+    if (!rule) continue;
 
     const currentValue =
       number(
@@ -599,6 +642,7 @@ async function getUserAchievements(
     achievementsResult,
     progressResult
   ] = await Promise.all([
+
     supabase
       .from('achievements')
       .select('*')
@@ -608,6 +652,7 @@ async function getUserAchievements(
       .from('user_achievements')
       .select('*')
       .eq('user_id', userId)
+
   ]);
 
   if (achievementsResult.error) {
@@ -643,6 +688,304 @@ async function getUserAchievements(
 
 
 /* =========================================================
+   CHALLENGES
+========================================================= */
+
+const challengeMetricOptions = [
+  {
+    value: 'kills',
+    label: 'Kills'
+  },
+  {
+    value: 'wins',
+    label: 'Wins'
+  },
+  {
+    value: 'headshots',
+    label: 'Headshots'
+  },
+  {
+    value: 'games_played',
+    label: 'Games Played'
+  }
+];
+
+function challengeMetricLabel(metric) {
+  return (
+    challengeMetricOptions.find(
+      option =>
+        option.value === metric
+    )?.label ||
+    metric
+  );
+}
+
+function statValueForMetric(
+  stat,
+  metric
+) {
+  if (!stat) return 0;
+
+  if (metric === 'kills') {
+    return number(stat.kills);
+  }
+
+  if (metric === 'wins') {
+    return number(stat.wins);
+  }
+
+  if (metric === 'headshots') {
+    return number(stat.headshots);
+  }
+
+  if (metric === 'games_played') {
+    return number(
+      stat.games_played
+    );
+  }
+
+  return 0;
+}
+
+async function getChallenges(userId) {
+  const { data, error } = await supabase
+    .from('challenge_details')
+    .select('*')
+    .or(
+      `creator_id.eq.${userId},opponent_id.eq.${userId}`
+    )
+    .order('created_at', {
+      ascending: false
+    });
+
+  if (error) throw error;
+
+  return data || [];
+}
+
+async function createChallenge({
+  creatorId,
+  opponentId,
+  gameId,
+  metric,
+  target
+}) {
+  const creatorStat =
+    await getRawGameStat(
+      creatorId,
+      gameId
+    );
+
+  const creatorStart =
+    statValueForMetric(
+      creatorStat,
+      metric
+    );
+
+  const { error } = await supabase
+    .from('challenges')
+    .insert({
+      creator_id: creatorId,
+      opponent_id: opponentId,
+      game_id: gameId,
+      metric,
+      target: number(target),
+      reward: 0,
+      status: 'pending',
+      creator_start_value: creatorStart,
+      opponent_start_value: 0,
+      creator_progress: 0,
+      opponent_progress: 0
+    });
+
+  if (error) throw error;
+}
+
+async function acceptChallenge(
+  challenge
+) {
+  const [
+    creatorStat,
+    opponentStat
+  ] = await Promise.all([
+    getRawGameStat(
+      challenge.creator_id,
+      challenge.game_id
+    ),
+
+    getRawGameStat(
+      challenge.opponent_id,
+      challenge.game_id
+    )
+  ]);
+
+  const creatorStart =
+    statValueForMetric(
+      creatorStat,
+      challenge.metric
+    );
+
+  const opponentStart =
+    statValueForMetric(
+      opponentStat,
+      challenge.metric
+    );
+
+  const { error } = await supabase
+    .from('challenges')
+    .update({
+      status: 'active',
+      accepted_at: new Date().toISOString(),
+      creator_start_value: creatorStart,
+      opponent_start_value: opponentStart,
+      creator_progress: 0,
+      opponent_progress: 0
+    })
+    .eq('id', challenge.id);
+
+  if (error) throw error;
+}
+
+async function declineChallenge(
+  challengeId
+) {
+  const { error } = await supabase
+    .from('challenges')
+    .update({
+      status: 'declined'
+    })
+    .eq('id', challengeId);
+
+  if (error) throw error;
+}
+
+async function cancelChallenge(
+  challengeId
+) {
+  const { error } = await supabase
+    .from('challenges')
+    .delete()
+    .eq('id', challengeId);
+
+  if (error) throw error;
+}
+
+async function refreshChallenge(
+  challenge
+) {
+  if (
+    challenge.status !==
+    'active'
+  ) {
+    return;
+  }
+
+  const [
+    creatorStat,
+    opponentStat
+  ] = await Promise.all([
+    getRawGameStat(
+      challenge.creator_id,
+      challenge.game_id
+    ),
+
+    getRawGameStat(
+      challenge.opponent_id,
+      challenge.game_id
+    )
+  ]);
+
+  const creatorCurrent =
+    statValueForMetric(
+      creatorStat,
+      challenge.metric
+    );
+
+  const opponentCurrent =
+    statValueForMetric(
+      opponentStat,
+      challenge.metric
+    );
+
+  const creatorProgress =
+    Math.max(
+      0,
+      creatorCurrent -
+      number(
+        challenge.creator_start_value
+      )
+    );
+
+  const opponentProgress =
+    Math.max(
+      0,
+      opponentCurrent -
+      number(
+        challenge.opponent_start_value
+      )
+    );
+
+  const target =
+    number(
+      challenge.target
+    );
+
+  let winnerId = null;
+
+  if (
+    creatorProgress >= target &&
+    opponentProgress >= target
+  ) {
+    winnerId =
+      creatorProgress >= opponentProgress
+        ? challenge.creator_id
+        : challenge.opponent_id;
+
+  } else if (
+    creatorProgress >= target
+  ) {
+    winnerId =
+      challenge.creator_id;
+
+  } else if (
+    opponentProgress >= target
+  ) {
+    winnerId =
+      challenge.opponent_id;
+  }
+
+  const update = {
+    creator_progress:
+      creatorProgress,
+
+    opponent_progress:
+      opponentProgress
+  };
+
+  if (winnerId) {
+    update.status =
+      'completed';
+
+    update.winner_id =
+      winnerId;
+
+    update.completed_at =
+      new Date().toISOString();
+  }
+
+  const { error } = await supabase
+    .from('challenges')
+    .update(update)
+    .eq(
+      'id',
+      challenge.id
+    );
+
+  if (error) throw error;
+}
+
+
+/* =========================================================
    AUTH
 ========================================================= */
 
@@ -659,8 +1002,10 @@ function Auth() {
   const [username, setUsername] =
     useState('');
 
-  const [displayName, setDisplayName] =
-    useState('');
+  const [
+    displayName,
+    setDisplayName
+  ] = useState('');
 
   const [busy, setBusy] =
     useState(false);
@@ -925,9 +1270,11 @@ function Chart() {
                 style={{
                   height: `${
                     28 +
-                    ((value - min) /
-                      (max - min)) *
-                      68
+                    (
+                      (value - min) /
+                      (max - min)
+                    ) *
+                    68
                   }%`
                 }}
               />
@@ -1368,7 +1715,9 @@ function Stats({
                 >
 
                   <td>
-                    <b>{game.name}</b>
+                    <b>
+                      {game.name}
+                    </b>
                   </td>
 
                   <td>
@@ -1594,17 +1943,25 @@ function GameDetail({
 function LeaderboardPage({
   currentUserId
 }) {
-  const [overallRows, setOverallRows] =
-    useState([]);
+  const [
+    overallRows,
+    setOverallRows
+  ] = useState([]);
 
-  const [gameRows, setGameRows] =
-    useState([]);
+  const [
+    gameRows,
+    setGameRows
+  ] = useState([]);
 
-  const [gameFilter, setGameFilter] =
-    useState('Overall');
+  const [
+    gameFilter,
+    setGameFilter
+  ] = useState('Overall');
 
-  const [metric, setMetric] =
-    useState('kills');
+  const [
+    metric,
+    setMetric
+  ] = useState('kills');
 
   const [loading, setLoading] =
     useState(true);
@@ -1650,10 +2007,11 @@ function LeaderboardPage({
       source = [...overallRows];
 
     } else {
-      source = gameRows.filter(
-        row =>
-          row.game_name === gameFilter
-      );
+      source =
+        gameRows.filter(
+          row =>
+            row.game_name === gameFilter
+        );
     }
 
     return source.sort(
@@ -1661,6 +2019,7 @@ function LeaderboardPage({
         number(b[metric]) -
         number(a[metric])
     );
+
   }, [
     overallRows,
     gameRows,
@@ -1975,85 +2334,6 @@ function LeaderboardPage({
 
       </section>
 
-      <section className="panel">
-
-        <div className="panel-head">
-
-          <div>
-
-            <h2>
-              Player Stats
-            </h2>
-
-            <span>
-              Additional leaderboard details
-            </span>
-
-          </div>
-
-        </div>
-
-        {rows.map(row => {
-          const playerName =
-            row.display_name ||
-            row.username ||
-            'Player';
-
-          return (
-            <div
-              className="gamecard"
-              key={`stats-${row.user_id}-${row.game_id || 'overall'}`}
-              style={{
-                marginBottom: '12px'
-              }}
-            >
-
-              <div className="glogo">
-                {playerName
-                  .charAt(0)
-                  .toUpperCase()}
-              </div>
-
-              <div>
-
-                <b>
-                  {playerName}
-                </b>
-
-                <small>
-                  {formatNumber(
-                    row.games_played
-                  )} games •{' '}
-                  {formatNumber(
-                    row.wins
-                  )} wins •{' '}
-                  {formatNumber(
-                    row.kills
-                  )} kills
-                </small>
-
-              </div>
-
-              <div className="kpg">
-
-                <b>
-                  {formatDecimal(
-                    row.kpg
-                  )}
-                </b>
-
-                <small>
-                  KPG
-                </small>
-
-              </div>
-
-            </div>
-          );
-        })}
-
-      </section>
-
     </div>
   );
 }
@@ -2157,8 +2437,6 @@ function AchievementsPage({
     if (!rule) {
       return {
         supported: false,
-        current: 0,
-        target: 0,
         percent: 0,
         label:
           'Match-history tracking required'
@@ -2183,8 +2461,6 @@ function AchievementsPage({
 
     return {
       supported: true,
-      current,
-      target: rule.target,
       percent,
 
       label:
@@ -2222,7 +2498,6 @@ function AchievementsPage({
 
         <div className="achievement-points">
           <Award size={18} />
-
           {earnedPoints} points
         </div>
 
@@ -2385,6 +2660,967 @@ function AchievementsPage({
           )}
 
         </div>
+
+      )}
+
+    </div>
+  );
+}
+
+
+/* =========================================================
+   LIVE CHALLENGES PAGE
+========================================================= */
+
+function ChallengesPage({
+  user
+}) {
+  const [games, setGames] =
+    useState([]);
+
+  const [friends, setFriends] =
+    useState([]);
+
+  const [
+    challenges,
+    setChallenges
+  ] = useState([]);
+
+  const [
+    opponentId,
+    setOpponentId
+  ] = useState('');
+
+  const [
+    gameId,
+    setGameId
+  ] = useState('');
+
+  const [
+    metric,
+    setMetric
+  ] = useState('kills');
+
+  const [
+    target,
+    setTarget
+  ] = useState('100');
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [busy, setBusy] =
+    useState(false);
+
+  const [message, setMessage] =
+    useState('');
+
+  async function load() {
+    setLoading(true);
+
+    try {
+      const [
+        gameList,
+        friendshipData,
+        challengeRows
+      ] = await Promise.all([
+        getGames(),
+        getFriendships(user.id),
+        getChallenges(user.id)
+      ]);
+
+      setGames(gameList);
+      setFriends(
+        friendshipData.friends
+      );
+      setChallenges(
+        challengeRows
+      );
+
+      if (
+        !gameId &&
+        gameList.length
+      ) {
+        setGameId(
+          String(
+            gameList[0].id
+          )
+        );
+      }
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not load challenges.'
+      );
+
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, [user.id]);
+
+  async function submitChallenge(e) {
+    e.preventDefault();
+
+    setBusy(true);
+    setMessage('');
+
+    try {
+      if (!opponentId) {
+        throw new Error(
+          'Choose a friend to challenge.'
+        );
+      }
+
+      if (!gameId) {
+        throw new Error(
+          'Choose a game.'
+        );
+      }
+
+      if (
+        number(target) <= 0
+      ) {
+        throw new Error(
+          'Target must be greater than zero.'
+        );
+      }
+
+      await createChallenge({
+        creatorId:
+          user.id,
+
+        opponentId,
+
+        gameId:
+          number(gameId),
+
+        metric,
+
+        target:
+          number(target)
+      });
+
+      await load();
+
+      setMessage(
+        'Challenge sent.'
+      );
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not create challenge.'
+      );
+
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function accept(row) {
+    setBusy(true);
+    setMessage('');
+
+    try {
+      await acceptChallenge(
+        row
+      );
+
+      await load();
+
+      setMessage(
+        'Challenge accepted.'
+      );
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not accept challenge.'
+      );
+
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function decline(row) {
+    setBusy(true);
+    setMessage('');
+
+    try {
+      await declineChallenge(
+        row.id
+      );
+
+      await load();
+
+      setMessage(
+        'Challenge declined.'
+      );
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not decline challenge.'
+      );
+
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancel(row) {
+    setBusy(true);
+    setMessage('');
+
+    try {
+      await cancelChallenge(
+        row.id
+      );
+
+      await load();
+
+      setMessage(
+        'Challenge cancelled.'
+      );
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not cancel challenge.'
+      );
+
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshAll() {
+    setBusy(true);
+    setMessage('');
+
+    try {
+      const active =
+        challenges.filter(
+          row =>
+            row.status ===
+            'active'
+        );
+
+      for (
+        const challenge
+        of active
+      ) {
+        await refreshChallenge(
+          challenge
+        );
+      }
+
+      await load();
+
+      setMessage(
+        'Challenge progress refreshed.'
+      );
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not refresh challenge progress.'
+      );
+
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const incoming =
+    challenges.filter(
+      row =>
+        row.status ===
+          'pending' &&
+        row.opponent_id ===
+          user.id
+    );
+
+  const sent =
+    challenges.filter(
+      row =>
+        row.status ===
+          'pending' &&
+        row.creator_id ===
+          user.id
+    );
+
+  const active =
+    challenges.filter(
+      row =>
+        row.status ===
+        'active'
+    );
+
+  const completed =
+    challenges.filter(
+      row =>
+        row.status ===
+        'completed'
+    );
+
+  function opponentName(row) {
+    if (
+      row.creator_id ===
+      user.id
+    ) {
+      return (
+        row.opponent_display_name ||
+        row.opponent_username ||
+        'Player'
+      );
+    }
+
+    return (
+      row.creator_display_name ||
+      row.creator_username ||
+      'Player'
+    );
+  }
+
+  function challengeCard(row) {
+    const targetValue =
+      Math.max(
+        1,
+        number(row.target)
+      );
+
+    const myProgress =
+      row.creator_id === user.id
+        ? number(
+            row.creator_progress
+          )
+        : number(
+            row.opponent_progress
+          );
+
+    const theirProgress =
+      row.creator_id === user.id
+        ? number(
+            row.opponent_progress
+          )
+        : number(
+            row.creator_progress
+          );
+
+    const myPercent =
+      Math.min(
+        100,
+        (
+          myProgress /
+          targetValue
+        ) * 100
+      );
+
+    const theirPercent =
+      Math.min(
+        100,
+        (
+          theirProgress /
+          targetValue
+        ) * 100
+      );
+
+    const name =
+      opponentName(row);
+
+    const iWon =
+      row.status ===
+        'completed' &&
+      row.winner_id ===
+        user.id;
+
+    return (
+      <div
+        className="panel"
+        key={row.id}
+        style={{
+          marginBottom: '16px'
+        }}
+      >
+
+        <div className="panel-head">
+
+          <div>
+
+            <div className="eyebrow">
+              {row.game_name ||
+                'GAME'}
+            </div>
+
+            <h2>
+              You vs {name}
+            </h2>
+
+            <span>
+              First to{' '}
+              {formatNumber(
+                row.target
+              )}{' '}
+              {challengeMetricLabel(
+                row.metric
+              )}
+            </span>
+
+          </div>
+
+          <span className="pill">
+            {String(
+              row.status
+            ).toUpperCase()}
+          </span>
+
+        </div>
+
+        {row.status ===
+          'active' && (
+          <>
+
+            <div
+              style={{
+                marginBottom:
+                  '16px'
+              }}
+            >
+
+              <div className="progress-label">
+
+                <span>
+                  You:{' '}
+                  {formatNumber(
+                    myProgress
+                  )}
+                </span>
+
+                <span>
+                  {formatNumber(
+                    row.target
+                  )}
+                </span>
+
+              </div>
+
+              <div className="progress">
+                <i
+                  style={{
+                    width:
+                      `${myPercent}%`
+                  }}
+                />
+              </div>
+
+            </div>
+
+            <div>
+
+              <div className="progress-label">
+
+                <span>
+                  {name}:{' '}
+                  {formatNumber(
+                    theirProgress
+                  )}
+                </span>
+
+                <span>
+                  {formatNumber(
+                    row.target
+                  )}
+                </span>
+
+              </div>
+
+              <div className="progress">
+                <i
+                  style={{
+                    width:
+                      `${theirPercent}%`
+                  }}
+                />
+              </div>
+
+            </div>
+
+          </>
+        )}
+
+        {row.status ===
+          'completed' && (
+          <div
+            className="notice"
+            style={{
+              marginTop:
+                '12px'
+            }}
+          >
+            {iWon
+              ? '🏆 You won this challenge!'
+              : `Challenge won by ${name}.`}
+          </div>
+        )}
+
+      </div>
+    );
+  }
+
+  return (
+    <div className="page">
+
+      <div className="page-head">
+
+        <div>
+
+          <div className="eyebrow">
+            LIVE CHALLENGES
+          </div>
+
+          <h1>
+            Challenges
+          </h1>
+
+          <p>
+            Challenge friends and race toward a competitive target.
+          </p>
+
+        </div>
+
+        <button
+          className="primary"
+          onClick={
+            refreshAll
+          }
+          disabled={busy}
+        >
+          <RefreshCw size={17} />
+
+          Refresh
+        </button>
+
+      </div>
+
+      {message && (
+        <div className="notice">
+          {message}
+        </div>
+      )}
+
+      <section className="panel">
+
+        <div className="panel-head">
+
+          <div>
+
+            <h2>
+              Create Challenge
+            </h2>
+
+            <span>
+              Challenge an accepted FragRank friend
+            </span>
+
+          </div>
+
+        </div>
+
+        {friends.length === 0 ? (
+
+          <p className="muted">
+            Add at least one friend before creating a challenge.
+          </p>
+
+        ) : (
+
+          <form
+            onSubmit={
+              submitChallenge
+            }
+          >
+
+            <label>
+              Opponent
+
+              <select
+                value={
+                  opponentId
+                }
+                onChange={
+                  e =>
+                    setOpponentId(
+                      e.target.value
+                    )
+                }
+                required
+              >
+
+                <option value="">
+                  Choose friend
+                </option>
+
+                {friends.map(
+                  item => (
+                    <option
+                      key={
+                        item.profile.id
+                      }
+                      value={
+                        item.profile.id
+                      }
+                    >
+                      {getPlayerName(
+                        item.profile
+                      )}
+                    </option>
+                  )
+                )}
+
+              </select>
+
+            </label>
+
+            <label>
+              Game
+
+              <select
+                value={gameId}
+                onChange={
+                  e =>
+                    setGameId(
+                      e.target.value
+                    )
+                }
+                required
+              >
+
+                {games.map(
+                  game => (
+                    <option
+                      key={
+                        game.id
+                      }
+                      value={
+                        game.id
+                      }
+                    >
+                      {game.name}
+                    </option>
+                  )
+                )}
+
+              </select>
+
+            </label>
+
+            <label>
+              Stat
+
+              <select
+                value={metric}
+                onChange={
+                  e =>
+                    setMetric(
+                      e.target.value
+                    )
+                }
+              >
+
+                {challengeMetricOptions.map(
+                  option => (
+                    <option
+                      key={
+                        option.value
+                      }
+                      value={
+                        option.value
+                      }
+                    >
+                      {option.label}
+                    </option>
+                  )
+                )}
+
+              </select>
+
+            </label>
+
+            <label>
+              Target
+
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={target}
+                onChange={
+                  e =>
+                    setTarget(
+                      e.target.value
+                    )
+                }
+                required
+              />
+            </label>
+
+            <button
+              className="primary"
+              disabled={busy}
+            >
+              <Zap size={17} />
+
+              Send Challenge
+            </button>
+
+          </form>
+
+        )}
+
+      </section>
+
+      {incoming.length > 0 && (
+
+        <section className="panel">
+
+          <div className="panel-head">
+
+            <h2>
+              Incoming Challenges
+            </h2>
+
+            <span className="pill">
+              {incoming.length}
+            </span>
+
+          </div>
+
+          {incoming.map(
+            row => (
+              <div
+                className="friend"
+                key={row.id}
+              >
+
+                <div className="avatar">
+                  {(
+                    row.creator_display_name ||
+                    row.creator_username ||
+                    'P'
+                  )[0].toUpperCase()}
+                </div>
+
+                <div
+                  style={{
+                    flex: 1
+                  }}
+                >
+
+                  <b>
+                    {row.creator_display_name ||
+                      row.creator_username ||
+                      'Player'}
+                  </b>
+
+                  <small>
+                    {row.game_name} • First to{' '}
+                    {formatNumber(
+                      row.target
+                    )}{' '}
+                    {challengeMetricLabel(
+                      row.metric
+                    )}
+                  </small>
+
+                </div>
+
+                <button
+                  className="primary"
+                  onClick={() =>
+                    accept(row)
+                  }
+                  disabled={busy}
+                >
+                  <Check size={16} />
+                  Accept
+                </button>
+
+                <button
+                  className="iconbtn"
+                  onClick={() =>
+                    decline(row)
+                  }
+                  disabled={busy}
+                >
+                  <X size={16} />
+                </button>
+
+              </div>
+            )
+          )}
+
+        </section>
+
+      )}
+
+      {active.length > 0 && (
+
+        <section>
+
+          <div
+            className="panel-head"
+            style={{
+              marginBottom:
+                '14px'
+            }}
+          >
+
+            <div>
+
+              <h2>
+                Active Challenges
+              </h2>
+
+              <span>
+                Progress begins when the challenge is accepted
+              </span>
+
+            </div>
+
+          </div>
+
+          {active.map(
+            challengeCard
+          )}
+
+        </section>
+
+      )}
+
+      {sent.length > 0 && (
+
+        <section className="panel">
+
+          <div className="panel-head">
+
+            <h2>
+              Sent Challenges
+            </h2>
+
+          </div>
+
+          {sent.map(
+            row => (
+              <div
+                className="friend"
+                key={row.id}
+              >
+
+                <div className="avatar">
+                  {(
+                    row.opponent_display_name ||
+                    row.opponent_username ||
+                    'P'
+                  )[0].toUpperCase()}
+                </div>
+
+                <div
+                  style={{
+                    flex: 1
+                  }}
+                >
+
+                  <b>
+                    {row.opponent_display_name ||
+                      row.opponent_username ||
+                      'Player'}
+                  </b>
+
+                  <small>
+                    Pending • {row.game_name}
+                  </small>
+
+                </div>
+
+                <button
+                  className="logout"
+                  onClick={() =>
+                    cancel(row)
+                  }
+                  disabled={busy}
+                >
+                  Cancel
+                </button>
+
+              </div>
+            )
+          )}
+
+        </section>
+
+      )}
+
+      {completed.length > 0 && (
+
+        <section>
+
+          <div
+            className="panel-head"
+            style={{
+              marginBottom:
+                '14px'
+            }}
+          >
+
+            <h2>
+              Completed Challenges
+            </h2>
+
+          </div>
+
+          {completed.map(
+            challengeCard
+          )}
+
+        </section>
+
+      )}
+
+      {!loading &&
+        challenges.length === 0 && (
+
+        <section className="panel coming">
+
+          <Zap size={44} />
+
+          <h2>
+            No challenges yet
+          </h2>
+
+          <p>
+            Create your first challenge against a FragRank friend.
+          </p>
+
+        </section>
+
+      )}
+
+      {loading && (
+
+        <section className="panel">
+
+          <p className="muted">
+            Loading challenges…
+          </p>
+
+        </section>
 
       )}
 
@@ -2668,7 +3904,7 @@ function FriendsPage({
 
           {incoming.map(item => {
 
-            const profile =
+            const friendProfile =
               item.profile;
 
             return (
@@ -2679,20 +3915,20 @@ function FriendsPage({
 
                 <div className="avatar">
                   {(
-                    profile.display_name ||
-                    profile.username
+                    friendProfile.display_name ||
+                    friendProfile.username
                   )[0].toUpperCase()}
                 </div>
 
                 <div>
 
                   <b>
-                    {profile.display_name ||
-                      profile.username}
+                    {friendProfile.display_name ||
+                      friendProfile.username}
                   </b>
 
                   <small>
-                    @{profile.username}
+                    @{friendProfile.username}
                   </small>
 
                 </div>
@@ -2760,7 +3996,7 @@ function FriendsPage({
 
           friends.map(item => {
 
-            const profile =
+            const friendProfile =
               item.profile;
 
             return (
@@ -2774,7 +4010,7 @@ function FriendsPage({
                 }}
                 onClick={() =>
                   openFriend(
-                    profile,
+                    friendProfile,
                     item.friendshipId
                   )
                 }
@@ -2784,20 +4020,20 @@ function FriendsPage({
 
                   <div className="avatar">
                     {(
-                      profile.display_name ||
-                      profile.username
+                      friendProfile.display_name ||
+                      friendProfile.username
                     )[0].toUpperCase()}
                   </div>
 
                   <div>
 
                     <b>
-                      {profile.display_name ||
-                        profile.username}
+                      {friendProfile.display_name ||
+                        friendProfile.username}
                     </b>
 
                     <small>
-                      @{profile.username}
+                      @{friendProfile.username}
                     </small>
 
                   </div>
@@ -3669,10 +4905,8 @@ function App() {
     ),
 
     challenges: (
-      <Foundation
-        title="Challenges"
-        Icon={Zap}
-        description="Head-to-head competitive challenges."
+      <ChallengesPage
+        user={session.user}
       />
     ),
 
