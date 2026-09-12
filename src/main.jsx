@@ -75,6 +75,18 @@ function getPlayerName(profile) {
   );
 }
 
+function formatDate(value) {
+  if (!value) return '';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return date.toLocaleString();
+}
+
 
 /* =========================================================
    PROFILE
@@ -979,6 +991,336 @@ async function refreshChallenge(
     .eq(
       'id',
       challenge.id
+    );
+
+  if (error) throw error;
+}
+
+
+/* =========================================================
+   TOURNAMENTS
+========================================================= */
+
+async function getTournamentDetails() {
+  const { data, error } = await supabase
+    .from('tournament_details')
+    .select('*')
+    .order(
+      'created_at',
+      {
+        ascending: false
+      }
+    );
+
+  if (error) throw error;
+
+  return data || [];
+}
+
+async function getMyTournamentMemberships(
+  userId
+) {
+  const { data, error } = await supabase
+    .from('tournament_players')
+    .select(`
+      tournament_id,
+      user_id,
+      seed
+    `)
+    .eq('user_id', userId);
+
+  if (error) throw error;
+
+  return data || [];
+}
+
+async function getTournamentPlayers(
+  tournamentId
+) {
+  const {
+    data: membershipRows,
+    error: membershipError
+  } = await supabase
+    .from('tournament_players')
+    .select(`
+      tournament_id,
+      user_id,
+      seed
+    `)
+    .eq(
+      'tournament_id',
+      tournamentId
+    )
+    .order(
+      'seed',
+      {
+        ascending: true,
+        nullsFirst: false
+      }
+    );
+
+  if (membershipError) {
+    throw membershipError;
+  }
+
+  const rows =
+    membershipRows || [];
+
+  if (!rows.length) {
+    return [];
+  }
+
+  const ids =
+    rows.map(
+      row => row.user_id
+    );
+
+  const {
+    data: profiles,
+    error: profilesError
+  } = await supabase
+    .from('profiles')
+    .select(`
+      id,
+      username,
+      display_name,
+      title
+    `)
+    .in('id', ids);
+
+  if (profilesError) {
+    throw profilesError;
+  }
+
+  const profileMap = {};
+
+  for (
+    const profile
+    of profiles || []
+  ) {
+    profileMap[
+      profile.id
+    ] = profile;
+  }
+
+  return rows.map(row => ({
+    ...row,
+    profile:
+      profileMap[
+        row.user_id
+      ] || null
+  }));
+}
+
+async function createTournament({
+  creatorId,
+  name,
+  description,
+  gameId,
+  maxPlayers
+}) {
+  const {
+    data: tournament,
+    error
+  } = await supabase
+    .from('tournaments')
+    .insert({
+      name: name.trim(),
+      description:
+        description.trim() || null,
+      max_players:
+        number(maxPlayers),
+      status: 'open',
+      creator_id: creatorId,
+      game_id: number(gameId)
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  const {
+    error: joinError
+  } = await supabase
+    .from('tournament_players')
+    .insert({
+      tournament_id:
+        tournament.id,
+      user_id:
+        creatorId,
+      seed: 1
+    });
+
+  if (joinError) {
+    throw joinError;
+  }
+
+  return tournament;
+}
+
+async function joinTournament({
+  tournamentId,
+  userId
+}) {
+  const {
+    data: existing,
+    error: existingError
+  } = await supabase
+    .from('tournament_players')
+    .select(
+      'tournament_id,user_id'
+    )
+    .eq(
+      'tournament_id',
+      tournamentId
+    )
+    .eq(
+      'user_id',
+      userId
+    )
+    .maybeSingle();
+
+  if (existingError) {
+    throw existingError;
+  }
+
+  if (existing) {
+    throw new Error(
+      'You already joined this tournament.'
+    );
+  }
+
+  const {
+    data: tournament,
+    error: tournamentError
+  } = await supabase
+    .from('tournament_details')
+    .select('*')
+    .eq(
+      'id',
+      tournamentId
+    )
+    .single();
+
+  if (tournamentError) {
+    throw tournamentError;
+  }
+
+  if (
+    tournament.status !==
+    'open'
+  ) {
+    throw new Error(
+      'This tournament is not open for registration.'
+    );
+  }
+
+  if (
+    number(
+      tournament.player_count
+    ) >=
+    number(
+      tournament.max_players
+    )
+  ) {
+    throw new Error(
+      'This tournament is full.'
+    );
+  }
+
+  const {
+    data: currentPlayers,
+    error: playersError
+  } = await supabase
+    .from('tournament_players')
+    .select('user_id')
+    .eq(
+      'tournament_id',
+      tournamentId
+    );
+
+  if (playersError) {
+    throw playersError;
+  }
+
+  const nextSeed =
+    (currentPlayers?.length || 0) + 1;
+
+  const { error } = await supabase
+    .from('tournament_players')
+    .insert({
+      tournament_id:
+        tournamentId,
+      user_id:
+        userId,
+      seed:
+        nextSeed
+    });
+
+  if (error) throw error;
+}
+
+async function leaveTournament({
+  tournamentId,
+  userId
+}) {
+  const { error } = await supabase
+    .from('tournament_players')
+    .delete()
+    .eq(
+      'tournament_id',
+      tournamentId
+    )
+    .eq(
+      'user_id',
+      userId
+    );
+
+  if (error) throw error;
+}
+
+async function updateTournamentStatus(
+  tournamentId,
+  status
+) {
+  const update = {
+    status
+  };
+
+  if (
+    status === 'active'
+  ) {
+    update.start_at =
+      new Date().toISOString();
+  }
+
+  if (
+    status === 'completed'
+  ) {
+    update.completed_at =
+      new Date().toISOString();
+  }
+
+  const { error } = await supabase
+    .from('tournaments')
+    .update(update)
+    .eq(
+      'id',
+      tournamentId
+    );
+
+  if (error) throw error;
+}
+
+async function deleteTournament(
+  tournamentId
+) {
+  const { error } = await supabase
+    .from('tournaments')
+    .delete()
+    .eq(
+      'id',
+      tournamentId
     );
 
   if (error) throw error;
@@ -3630,6 +3972,1351 @@ function ChallengesPage({
 
 
 /* =========================================================
+   LIVE TOURNAMENTS PAGE
+========================================================= */
+
+function TournamentsPage({
+  user
+}) {
+  const [
+    tournaments,
+    setTournaments
+  ] = useState([]);
+
+  const [
+    memberships,
+    setMemberships
+  ] = useState([]);
+
+  const [games, setGames] =
+    useState([]);
+
+  const [
+    selectedTournament,
+    setSelectedTournament
+  ] = useState(null);
+
+  const [
+    tournamentPlayers,
+    setTournamentPlayers
+  ] = useState([]);
+
+  const [name, setName] =
+    useState('');
+
+  const [
+    description,
+    setDescription
+  ] = useState('');
+
+  const [gameId, setGameId] =
+    useState('');
+
+  const [
+    maxPlayers,
+    setMaxPlayers
+  ] = useState('8');
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [busy, setBusy] =
+    useState(false);
+
+  const [message, setMessage] =
+    useState('');
+
+  async function load() {
+    setLoading(true);
+
+    try {
+      const [
+        tournamentRows,
+        membershipRows,
+        gameRows
+      ] = await Promise.all([
+        getTournamentDetails(),
+        getMyTournamentMemberships(
+          user.id
+        ),
+        getGames()
+      ]);
+
+      setTournaments(
+        tournamentRows
+      );
+
+      setMemberships(
+        membershipRows
+      );
+
+      setGames(
+        gameRows
+      );
+
+      if (
+        !gameId &&
+        gameRows.length
+      ) {
+        setGameId(
+          String(
+            gameRows[0].id
+          )
+        );
+      }
+
+      if (
+        selectedTournament
+      ) {
+        const updated =
+          tournamentRows.find(
+            row =>
+              row.id ===
+              selectedTournament.id
+          );
+
+        if (updated) {
+          setSelectedTournament(
+            updated
+          );
+
+          const players =
+            await getTournamentPlayers(
+              updated.id
+            );
+
+          setTournamentPlayers(
+            players
+          );
+        } else {
+          setSelectedTournament(
+            null
+          );
+
+          setTournamentPlayers(
+            []
+          );
+        }
+      }
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not load tournaments.'
+      );
+
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, [user.id]);
+
+  function isJoined(
+    tournamentId
+  ) {
+    return memberships.some(
+      membership =>
+        membership.tournament_id ===
+        tournamentId
+    );
+  }
+
+  async function create(e) {
+    e.preventDefault();
+
+    setBusy(true);
+    setMessage('');
+
+    try {
+      if (!name.trim()) {
+        throw new Error(
+          'Enter a tournament name.'
+        );
+      }
+
+      if (!gameId) {
+        throw new Error(
+          'Choose a game.'
+        );
+      }
+
+      if (
+        number(maxPlayers) < 2
+      ) {
+        throw new Error(
+          'A tournament needs at least 2 player slots.'
+        );
+      }
+
+      await createTournament({
+        creatorId:
+          user.id,
+        name,
+        description,
+        gameId:
+          number(gameId),
+        maxPlayers:
+          number(maxPlayers)
+      });
+
+      setName('');
+      setDescription('');
+      setMaxPlayers('8');
+
+      await load();
+
+      setMessage(
+        'Tournament created. You were automatically added as player #1.'
+      );
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not create tournament.'
+      );
+
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function join(row) {
+    setBusy(true);
+    setMessage('');
+
+    try {
+      await joinTournament({
+        tournamentId:
+          row.id,
+        userId:
+          user.id
+      });
+
+      await load();
+
+      setMessage(
+        `You joined ${row.name}.`
+      );
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not join tournament.'
+      );
+
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function leave(row) {
+    setBusy(true);
+    setMessage('');
+
+    try {
+      if (
+        row.creator_id ===
+        user.id
+      ) {
+        throw new Error(
+          'The tournament creator cannot leave. Delete the tournament instead.'
+        );
+      }
+
+      await leaveTournament({
+        tournamentId:
+          row.id,
+        userId:
+          user.id
+      });
+
+      await load();
+
+      setMessage(
+        `You left ${row.name}.`
+      );
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not leave tournament.'
+      );
+
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openTournament(
+    row
+  ) {
+    setBusy(true);
+    setMessage('');
+
+    try {
+      const players =
+        await getTournamentPlayers(
+          row.id
+        );
+
+      setSelectedTournament(
+        row
+      );
+
+      setTournamentPlayers(
+        players
+      );
+
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not load tournament players.'
+      );
+
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startTournament(
+    row
+  ) {
+    setBusy(true);
+    setMessage('');
+
+    try {
+      if (
+        number(
+          row.player_count
+        ) < 2
+      ) {
+        throw new Error(
+          'At least 2 players are required to start a tournament.'
+        );
+      }
+
+      await updateTournamentStatus(
+        row.id,
+        'active'
+      );
+
+      await load();
+
+      setMessage(
+        `${row.name} is now active.`
+      );
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not start tournament.'
+      );
+
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function completeTournament(
+    row
+  ) {
+    setBusy(true);
+    setMessage('');
+
+    try {
+      await updateTournamentStatus(
+        row.id,
+        'completed'
+      );
+
+      await load();
+
+      setMessage(
+        `${row.name} has been completed.`
+      );
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not complete tournament.'
+      );
+
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeTournament(
+    row
+  ) {
+    const confirmed =
+      window.confirm(
+        `Delete "${row.name}"? This cannot be undone.`
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBusy(true);
+    setMessage('');
+
+    try {
+      await deleteTournament(
+        row.id
+      );
+
+      if (
+        selectedTournament?.id ===
+        row.id
+      ) {
+        setSelectedTournament(
+          null
+        );
+
+        setTournamentPlayers(
+          []
+        );
+      }
+
+      await load();
+
+      setMessage(
+        'Tournament deleted.'
+      );
+
+    } catch (error) {
+      setMessage(
+        error.message ||
+        'Could not delete tournament.'
+      );
+
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (
+    selectedTournament
+  ) {
+    const row =
+      selectedTournament;
+
+    const creator =
+      row.creator_id ===
+      user.id;
+
+    const joined =
+      isJoined(
+        row.id
+      );
+
+    const full =
+      number(
+        row.player_count
+      ) >=
+      number(
+        row.max_players
+      );
+
+    return (
+      <div className="page">
+
+        <button
+          className="linkbtn"
+          onClick={() => {
+            setSelectedTournament(
+              null
+            );
+
+            setTournamentPlayers(
+              []
+            );
+          }}
+        >
+          <ChevronLeft size={18} />
+          Back to Tournaments
+        </button>
+
+        <div className="page-head">
+
+          <div>
+
+            <div className="eyebrow">
+              LIVE TOURNAMENT
+            </div>
+
+            <h1>
+              {row.name}
+            </h1>
+
+            <p>
+              {row.game_name ||
+                'FragRank Tournament'}
+            </p>
+
+          </div>
+
+          <span className="pill">
+            {String(
+              row.status
+            ).toUpperCase()}
+          </span>
+
+        </div>
+
+        {message && (
+          <div className="notice">
+            {message}
+          </div>
+        )}
+
+        <div className="stats">
+
+          <Stat
+            icon={Users}
+            label="Players"
+            value={`${formatNumber(
+              row.player_count
+            )} / ${formatNumber(
+              row.max_players
+            )}`}
+          />
+
+          <Stat
+            icon={Gamepad2}
+            label="Game"
+            value={
+              row.game_name ||
+              'Game'
+            }
+          />
+
+          <Stat
+            icon={Crown}
+            label="Creator"
+            value={
+              row.creator_display_name ||
+              row.creator_username ||
+              'Player'
+            }
+          />
+
+          <Stat
+            icon={Trophy}
+            label="Status"
+            value={
+              String(
+                row.status
+              ).toUpperCase()
+            }
+          />
+
+        </div>
+
+        {row.description && (
+
+          <section className="panel">
+
+            <div className="panel-head">
+
+              <h2>
+                About
+              </h2>
+
+            </div>
+
+            <p>
+              {row.description}
+            </p>
+
+          </section>
+
+        )}
+
+        <section className="panel">
+
+          <div className="panel-head">
+
+            <div>
+
+              <h2>
+                Tournament Players
+              </h2>
+
+              <span>
+                {formatNumber(
+                  tournamentPlayers.length
+                )} registered
+              </span>
+
+            </div>
+
+          </div>
+
+          {tournamentPlayers.length === 0 ? (
+
+            <p className="muted">
+              No players have joined yet.
+            </p>
+
+          ) : (
+
+            tournamentPlayers.map(
+              (item, index) => {
+
+                const player =
+                  item.profile;
+
+                const playerName =
+                  player?.display_name ||
+                  player?.username ||
+                  'Player';
+
+                return (
+                  <div
+                    className="friend"
+                    key={
+                      item.user_id
+                    }
+                  >
+
+                    <div
+                      style={{
+                        minWidth:
+                          '36px',
+                        fontWeight:
+                          '800'
+                      }}
+                    >
+                      #{item.seed ||
+                        index + 1}
+                    </div>
+
+                    <div className="avatar">
+                      {playerName
+                        .charAt(0)
+                        .toUpperCase()}
+                    </div>
+
+                    <div
+                      style={{
+                        flex: 1
+                      }}
+                    >
+
+                      <b>
+                        {playerName}
+                      </b>
+
+                      <small>
+                        @{player?.username ||
+                          'player'}
+                        {item.user_id ===
+                        row.creator_id
+                          ? ' • HOST'
+                          : ''}
+                      </small>
+
+                    </div>
+
+                    {item.user_id ===
+                      user.id && (
+                      <span className="pill">
+                        YOU
+                      </span>
+                    )}
+
+                  </div>
+                );
+              }
+            )
+
+          )}
+
+        </section>
+
+        {row.start_at && (
+
+          <section className="panel">
+
+            <h2>
+              Started
+            </h2>
+
+            <p>
+              {formatDate(
+                row.start_at
+              )}
+            </p>
+
+          </section>
+
+        )}
+
+        {row.completed_at && (
+
+          <section className="panel">
+
+            <h2>
+              Completed
+            </h2>
+
+            <p>
+              {formatDate(
+                row.completed_at
+              )}
+            </p>
+
+          </section>
+
+        )}
+
+        <section
+          className="panel"
+        >
+
+          <div className="panel-head">
+
+            <h2>
+              Actions
+            </h2>
+
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: '10px',
+              flexWrap: 'wrap'
+            }}
+          >
+
+            {!joined &&
+              row.status ===
+                'open' &&
+              !full && (
+
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() =>
+                  join(row)
+                }
+              >
+                <UserPlus size={17} />
+                Join Tournament
+              </button>
+
+            )}
+
+            {joined &&
+              !creator &&
+              row.status ===
+                'open' && (
+
+              <button
+                className="logout"
+                disabled={busy}
+                onClick={() =>
+                  leave(row)
+                }
+              >
+                Leave Tournament
+              </button>
+
+            )}
+
+            {creator &&
+              row.status ===
+                'open' && (
+
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() =>
+                  startTournament(
+                    row
+                  )
+                }
+              >
+                <Swords size={17} />
+                Start Tournament
+              </button>
+
+            )}
+
+            {creator &&
+              row.status ===
+                'active' && (
+
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() =>
+                  completeTournament(
+                    row
+                  )
+                }
+              >
+                <Trophy size={17} />
+                Complete Tournament
+              </button>
+
+            )}
+
+            {creator && (
+
+              <button
+                className="logout"
+                disabled={busy}
+                onClick={() =>
+                  removeTournament(
+                    row
+                  )
+                }
+              >
+                Delete Tournament
+              </button>
+
+            )}
+
+          </div>
+
+        </section>
+
+      </div>
+    );
+  }
+
+  const openTournaments =
+    tournaments.filter(
+      row =>
+        row.status ===
+        'open'
+    );
+
+  const activeTournaments =
+    tournaments.filter(
+      row =>
+        row.status ===
+        'active'
+    );
+
+  const completedTournaments =
+    tournaments.filter(
+      row =>
+        row.status ===
+        'completed'
+    );
+
+  function tournamentCard(row) {
+    const joined =
+      isJoined(
+        row.id
+      );
+
+    const creator =
+      row.creator_id ===
+      user.id;
+
+    const full =
+      number(
+        row.player_count
+      ) >=
+      number(
+        row.max_players
+      );
+
+    return (
+      <section
+        className="panel"
+        key={row.id}
+        style={{
+          marginBottom: '16px'
+        }}
+      >
+
+        <div className="panel-head">
+
+          <div>
+
+            <div className="eyebrow">
+              {row.game_name ||
+                'TOURNAMENT'}
+            </div>
+
+            <h2>
+              {row.name}
+            </h2>
+
+            <span>
+              Hosted by{' '}
+              {row.creator_display_name ||
+                row.creator_username ||
+                'Player'}
+            </span>
+
+          </div>
+
+          <span className="pill">
+            {String(
+              row.status
+            ).toUpperCase()}
+          </span>
+
+        </div>
+
+        {row.description && (
+          <p>
+            {row.description}
+          </p>
+        )}
+
+        <div
+          className="friend"
+          style={{
+            marginTop: '12px'
+          }}
+        >
+
+          <div className="avatar">
+            <Users size={18} />
+          </div>
+
+          <div
+            style={{
+              flex: 1
+            }}
+          >
+
+            <b>
+              {formatNumber(
+                row.player_count
+              )} / {formatNumber(
+                row.max_players
+              )} Players
+            </b>
+
+            <small>
+              {full
+                ? 'Tournament full'
+                : `${Math.max(
+                    0,
+                    number(
+                      row.max_players
+                    ) -
+                    number(
+                      row.player_count
+                    )
+                  )} spots remaining`}
+            </small>
+
+          </div>
+
+          {joined && (
+            <span className="pill">
+              JOINED
+            </span>
+          )}
+
+          {creator && (
+            <span className="pill">
+              HOST
+            </span>
+          )}
+
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '10px',
+            flexWrap: 'wrap',
+            marginTop: '14px'
+          }}
+        >
+
+          <button
+            className="primary"
+            onClick={() =>
+              openTournament(
+                row
+              )
+            }
+            disabled={busy}
+          >
+            View Tournament
+            <ChevronRight size={16} />
+          </button>
+
+          {!joined &&
+            row.status ===
+              'open' &&
+            !full && (
+
+            <button
+              className="linkbtn"
+              onClick={() =>
+                join(row)
+              }
+              disabled={busy}
+            >
+              <UserPlus size={16} />
+              Join
+            </button>
+
+          )}
+
+          {joined &&
+            !creator &&
+            row.status ===
+              'open' && (
+
+            <button
+              className="logout"
+              onClick={() =>
+                leave(row)
+              }
+              disabled={busy}
+            >
+              Leave
+            </button>
+
+          )}
+
+        </div>
+
+      </section>
+    );
+  }
+
+  return (
+    <div className="page">
+
+      <div className="page-head">
+
+        <div>
+
+          <div className="eyebrow">
+            LIVE TOURNAMENTS
+          </div>
+
+          <h1>
+            Tournaments
+          </h1>
+
+          <p>
+            Create competitions, join events, and battle for FragRank glory.
+          </p>
+
+        </div>
+
+        <button
+          className="primary"
+          onClick={load}
+          disabled={busy}
+        >
+          <RefreshCw size={17} />
+          Refresh
+        </button>
+
+      </div>
+
+      {message && (
+        <div className="notice">
+          {message}
+        </div>
+      )}
+
+      <section className="panel">
+
+        <div className="panel-head">
+
+          <div>
+
+            <h2>
+              Create Tournament
+            </h2>
+
+            <span>
+              Build a new FragRank competition
+            </span>
+
+          </div>
+
+        </div>
+
+        <form
+          onSubmit={create}
+        >
+
+          <label>
+            Tournament Name
+
+            <input
+              value={name}
+              onChange={e =>
+                setName(
+                  e.target.value
+                )
+              }
+              placeholder="Example: Friday Night Frag Cup"
+              required
+            />
+          </label>
+
+          <label>
+            Description
+
+            <input
+              value={description}
+              onChange={e =>
+                setDescription(
+                  e.target.value
+                )
+              }
+              placeholder="Tell players what this tournament is about"
+            />
+          </label>
+
+          <label>
+            Game
+
+            <select
+              value={gameId}
+              onChange={e =>
+                setGameId(
+                  e.target.value
+                )
+              }
+              required
+            >
+
+              {games.map(
+                game => (
+                  <option
+                    key={game.id}
+                    value={game.id}
+                  >
+                    {game.name}
+                  </option>
+                )
+              )}
+
+            </select>
+          </label>
+
+          <label>
+            Maximum Players
+
+            <select
+              value={
+                maxPlayers
+              }
+              onChange={e =>
+                setMaxPlayers(
+                  e.target.value
+                )
+              }
+            >
+              <option value="2">
+                2 Players
+              </option>
+
+              <option value="4">
+                4 Players
+              </option>
+
+              <option value="8">
+                8 Players
+              </option>
+
+              <option value="16">
+                16 Players
+              </option>
+
+              <option value="32">
+                32 Players
+              </option>
+            </select>
+          </label>
+
+          <button
+            className="primary"
+            disabled={busy}
+          >
+            <Trophy size={17} />
+            Create Tournament
+          </button>
+
+        </form>
+
+      </section>
+
+      {loading ? (
+
+        <section className="panel">
+
+          <p className="muted">
+            Loading tournaments…
+          </p>
+
+        </section>
+
+      ) : tournaments.length === 0 ? (
+
+        <section className="panel coming">
+
+          <Trophy size={44} />
+
+          <h2>
+            No tournaments yet
+          </h2>
+
+          <p>
+            Create the first FragRank tournament.
+          </p>
+
+        </section>
+
+      ) : (
+        <>
+
+          {openTournaments.length >
+            0 && (
+
+            <section>
+
+              <div
+                className="panel-head"
+                style={{
+                  marginBottom:
+                    '14px'
+                }}
+              >
+
+                <div>
+
+                  <h2>
+                    Open Tournaments
+                  </h2>
+
+                  <span>
+                    Registration is open
+                  </span>
+
+                </div>
+
+                <span className="pill">
+                  {openTournaments.length}
+                </span>
+
+              </div>
+
+              {openTournaments.map(
+                tournamentCard
+              )}
+
+            </section>
+
+          )}
+
+          {activeTournaments.length >
+            0 && (
+
+            <section>
+
+              <div
+                className="panel-head"
+                style={{
+                  marginBottom:
+                    '14px'
+                }}
+              >
+
+                <div>
+
+                  <h2>
+                    Active Tournaments
+                  </h2>
+
+                  <span>
+                    Competition is underway
+                  </span>
+
+                </div>
+
+                <span className="pill">
+                  {activeTournaments.length}
+                </span>
+
+              </div>
+
+              {activeTournaments.map(
+                tournamentCard
+              )}
+
+            </section>
+
+          )}
+
+          {completedTournaments.length >
+            0 && (
+
+            <section>
+
+              <div
+                className="panel-head"
+                style={{
+                  marginBottom:
+                    '14px'
+                }}
+              >
+
+                <div>
+
+                  <h2>
+                    Completed Tournaments
+                  </h2>
+
+                  <span>
+                    Tournament history
+                  </span>
+
+                </div>
+
+                <span className="pill">
+                  {completedTournaments.length}
+                </span>
+
+              </div>
+
+              {completedTournaments.map(
+                tournamentCard
+              )}
+
+            </section>
+
+          )}
+
+        </>
+      )}
+
+    </div>
+  );
+}
+
+
+/* =========================================================
    FRIENDS PAGE
 ========================================================= */
 
@@ -4911,10 +6598,8 @@ function App() {
     ),
 
     tournaments: (
-      <Foundation
-        title="Tournaments"
-        Icon={Trophy}
-        description="Custom tournaments and brackets."
+      <TournamentsPage
+        user={session.user}
       />
     ),
 
