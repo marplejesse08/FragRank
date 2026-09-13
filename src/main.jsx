@@ -36,7 +36,7 @@ import './styles.css';
 
 
 /* =========================================================
-   HELPERS
+   GENERAL HELPERS
 ========================================================= */
 
 function number(value) {
@@ -137,31 +137,6 @@ async function getGames() {
   return data || [];
 }
 
-async function getRawGameStat(userId, gameId) {
-  const { data, error } = await supabase
-    .from('game_stats')
-    .select(`
-      games_played,
-      wins,
-      kills,
-      deaths,
-      headshots
-    `)
-    .eq('user_id', userId)
-    .eq('game_id', gameId)
-    .maybeSingle();
-
-  if (error) throw error;
-
-  return data || {
-    games_played: 0,
-    wins: 0,
-    kills: 0,
-    deaths: 0,
-    headshots: 0
-  };
-}
-
 async function getGameStats(userId) {
   if (!userId) return [];
 
@@ -186,7 +161,9 @@ async function getGameStats(userId) {
 
   if (statsError) throw statsError;
 
-  if (!statRows?.length) return [];
+  if (!statRows?.length) {
+    return [];
+  }
 
   const gameIds = [
     ...new Set(
@@ -324,10 +301,7 @@ async function searchPlayers(text, currentUserId) {
   return data || [];
 }
 
-async function sendFriendRequest(
-  currentUserId,
-  otherUserId
-) {
+async function sendFriendRequest(currentUserId, otherUserId) {
   const {
     data: existing,
     error: existingError
@@ -460,10 +434,7 @@ async function getFriendships(userId) {
   };
 }
 
-async function respondToFriendRequest(
-  friendshipId,
-  status
-) {
+async function respondToFriendRequest(friendshipId, status) {
   const { error } = await supabase
     .from('friendships')
     .update({
@@ -551,10 +522,7 @@ const achievementRules = {
   }
 };
 
-async function syncAchievements(
-  userId,
-  totals
-) {
+async function syncAchievements(userId, totals) {
   const {
     data: achievements,
     error: achievementsError
@@ -563,9 +531,7 @@ async function syncAchievements(
     .select('*')
     .order('points');
 
-  if (achievementsError) {
-    throw achievementsError;
-  }
+  if (achievementsError) throw achievementsError;
 
   const {
     data: currentRows,
@@ -575,9 +541,7 @@ async function syncAchievements(
     .select('*')
     .eq('user_id', userId);
 
-  if (currentError) {
-    throw currentError;
-  }
+  if (currentError) throw currentError;
 
   const currentMap = {};
 
@@ -608,9 +572,7 @@ async function syncAchievements(
       currentValue >= rule.target;
 
     const existing =
-      currentMap[
-        achievement.id
-      ];
+      currentMap[achievement.id];
 
     updates.push({
       user_id: userId,
@@ -638,20 +600,15 @@ async function syncAchievements(
         }
       );
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error;
   }
 }
 
-async function getUserAchievements(
-  userId
-) {
+async function getUserAchievements(userId) {
   const [
     achievementsResult,
     progressResult
   ] = await Promise.all([
-
     supabase
       .from('achievements')
       .select('*')
@@ -661,7 +618,6 @@ async function getUserAchievements(
       .from('user_achievements')
       .select('*')
       .eq('user_id', userId)
-
   ]);
 
   if (achievementsResult.error) {
@@ -674,13 +630,8 @@ async function getUserAchievements(
 
   const progressMap = {};
 
-  for (
-    const row
-    of progressResult.data || []
-  ) {
-    progressMap[
-      row.achievement_id
-    ] = row;
+  for (const row of progressResult.data || []) {
+    progressMap[row.achievement_id] = row;
   }
 
   return (
@@ -697,7 +648,8 @@ async function getUserAchievements(
 
 
 /* =========================================================
-   CHALLENGES
+   SECURE CHALLENGES
+   ALL WRITES NOW GO THROUGH RPC
 ========================================================= */
 
 const challengeMetricOptions = [
@@ -722,38 +674,10 @@ const challengeMetricOptions = [
 function challengeMetricLabel(metric) {
   return (
     challengeMetricOptions.find(
-      option =>
-        option.value === metric
+      option => option.value === metric
     )?.label ||
     metric
   );
-}
-
-function statValueForMetric(
-  stat,
-  metric
-) {
-  if (!stat) return 0;
-
-  if (metric === 'kills') {
-    return number(stat.kills);
-  }
-
-  if (metric === 'wins') {
-    return number(stat.wins);
-  }
-
-  if (metric === 'headshots') {
-    return number(stat.headshots);
-  }
-
-  if (metric === 'games_played') {
-    return number(
-      stat.games_played
-    );
-  }
-
-  return 0;
 }
 
 async function getChallenges(userId) {
@@ -773,229 +697,76 @@ async function getChallenges(userId) {
 }
 
 async function createChallenge({
-  creatorId,
   opponentId,
   gameId,
   metric,
   target
 }) {
-  const creatorStat =
-    await getRawGameStat(
-      creatorId,
-      gameId
-    );
-
-  const creatorStart =
-    statValueForMetric(
-      creatorStat,
-      metric
-    );
-
-  const { error } = await supabase
-    .from('challenges')
-    .insert({
-      creator_id: creatorId,
-      opponent_id: opponentId,
-      game_id: gameId,
-      metric,
-      target: number(target),
-      reward: 0,
-      status: 'pending',
-      creator_start_value: creatorStart,
-      opponent_start_value: 0,
-      creator_progress: 0,
-      opponent_progress: 0
-    });
+  const { error } = await supabase.rpc(
+    'fr_create_challenge',
+    {
+      p_opponent_id: opponentId,
+      p_game_id: number(gameId),
+      p_metric: metric,
+      p_target: number(target)
+    }
+  );
 
   if (error) throw error;
 }
 
-async function acceptChallenge(
-  challenge
-) {
-  const [
-    creatorStat,
-    opponentStat
-  ] = await Promise.all([
-    getRawGameStat(
-      challenge.creator_id,
-      challenge.game_id
-    ),
-
-    getRawGameStat(
-      challenge.opponent_id,
-      challenge.game_id
-    )
-  ]);
-
-  const creatorStart =
-    statValueForMetric(
-      creatorStat,
-      challenge.metric
-    );
-
-  const opponentStart =
-    statValueForMetric(
-      opponentStat,
-      challenge.metric
-    );
-
-  const { error } = await supabase
-    .from('challenges')
-    .update({
-      status: 'active',
-      accepted_at:
-        new Date().toISOString(),
-      creator_start_value:
-        creatorStart,
-      opponent_start_value:
-        opponentStart,
-      creator_progress: 0,
-      opponent_progress: 0
-    })
-    .eq('id', challenge.id);
+async function acceptChallenge(challengeId) {
+  const { error } = await supabase.rpc(
+    'fr_accept_challenge',
+    {
+      p_challenge_id:
+        number(challengeId)
+    }
+  );
 
   if (error) throw error;
 }
 
-async function declineChallenge(
-  challengeId
-) {
-  const { error } = await supabase
-    .from('challenges')
-    .update({
-      status: 'declined'
-    })
-    .eq('id', challengeId);
+async function declineChallenge(challengeId) {
+  const { error } = await supabase.rpc(
+    'fr_decline_challenge',
+    {
+      p_challenge_id:
+        number(challengeId)
+    }
+  );
 
   if (error) throw error;
 }
 
-async function cancelChallenge(
-  challengeId
-) {
-  const { error } = await supabase
-    .from('challenges')
-    .delete()
-    .eq('id', challengeId);
+async function cancelChallenge(challengeId) {
+  const { error } = await supabase.rpc(
+    'fr_cancel_challenge',
+    {
+      p_challenge_id:
+        number(challengeId)
+    }
+  );
 
   if (error) throw error;
 }
 
-async function refreshChallenge(
-  challenge
-) {
-  if (
-    challenge.status !==
-    'active'
-  ) {
-    return;
-  }
-
-  const [
-    creatorStat,
-    opponentStat
-  ] = await Promise.all([
-    getRawGameStat(
-      challenge.creator_id,
-      challenge.game_id
-    ),
-
-    getRawGameStat(
-      challenge.opponent_id,
-      challenge.game_id
-    )
-  ]);
-
-  const creatorCurrent =
-    statValueForMetric(
-      creatorStat,
-      challenge.metric
-    );
-
-  const opponentCurrent =
-    statValueForMetric(
-      opponentStat,
-      challenge.metric
-    );
-
-  const creatorProgress =
-    Math.max(
-      0,
-      creatorCurrent -
-      number(
-        challenge.creator_start_value
-      )
-    );
-
-  const opponentProgress =
-    Math.max(
-      0,
-      opponentCurrent -
-      number(
-        challenge.opponent_start_value
-      )
-    );
-
-  const target =
-    number(
-      challenge.target
-    );
-
-  let winnerId = null;
-
-  if (
-    creatorProgress >= target &&
-    opponentProgress >= target
-  ) {
-    winnerId =
-      creatorProgress >= opponentProgress
-        ? challenge.creator_id
-        : challenge.opponent_id;
-
-  } else if (
-    creatorProgress >= target
-  ) {
-    winnerId =
-      challenge.creator_id;
-
-  } else if (
-    opponentProgress >= target
-  ) {
-    winnerId =
-      challenge.opponent_id;
-  }
-
-  const update = {
-    creator_progress:
-      creatorProgress,
-
-    opponent_progress:
-      opponentProgress
-  };
-
-  if (winnerId) {
-    update.status =
-      'completed';
-
-    update.winner_id =
-      winnerId;
-
-    update.completed_at =
-      new Date().toISOString();
-  }
-
-  const { error } = await supabase
-    .from('challenges')
-    .update(update)
-    .eq('id', challenge.id);
+async function refreshChallenge(challengeId) {
+  const { error } = await supabase.rpc(
+    'fr_refresh_challenge',
+    {
+      p_challenge_id:
+        number(challengeId)
+    }
+  );
 
   if (error) throw error;
 }
 
 
 /* =========================================================
-   TOURNAMENTS
+   SECURE TOURNAMENTS
+   ALL WRITES NOW GO THROUGH RPC
 ========================================================= */
 
 async function getTournamentDetails() {
@@ -1011,9 +782,7 @@ async function getTournamentDetails() {
   return data || [];
 }
 
-async function getMyTournamentMemberships(
-  userId
-) {
+async function getMyTournamentMemberships(userId) {
   const { data, error } = await supabase
     .from('tournament_players')
     .select(`
@@ -1028,9 +797,7 @@ async function getMyTournamentMemberships(
   return data || [];
 }
 
-async function getTournamentPlayers(
-  tournamentId
-) {
+async function getTournamentPlayers(tournamentId) {
   const {
     data: rows,
     error
@@ -1041,15 +808,14 @@ async function getTournamentPlayers(
       user_id,
       seed
     `)
-    .eq(
-      'tournament_id',
-      tournamentId
-    )
+    .eq('tournament_id', tournamentId)
     .order('seed');
 
   if (error) throw error;
 
-  if (!rows?.length) return [];
+  if (!rows?.length) {
+    return [];
+  }
 
   const ids =
     rows.map(
@@ -1076,13 +842,12 @@ async function getTournamentPlayers(
   const profileMap = {};
 
   for (const profile of profiles || []) {
-    profileMap[
-      profile.id
-    ] = profile;
+    profileMap[profile.id] = profile;
   }
 
   return rows.map(row => ({
     ...row,
+
     profile:
       profileMap[
         row.user_id
@@ -1091,174 +856,51 @@ async function getTournamentPlayers(
 }
 
 async function createTournament({
-  creatorId,
   name,
   description,
   gameId,
   maxPlayers
 }) {
-  const {
-    data: tournament,
-    error
-  } = await supabase
-    .from('tournaments')
-    .insert({
-      name:
+  const { error } = await supabase.rpc(
+    'fr_create_tournament',
+    {
+      p_name:
         name.trim(),
 
-      description:
-        description.trim() || null,
+      p_description:
+        description.trim(),
 
-      max_players:
-        number(maxPlayers),
+      p_game_id:
+        number(gameId),
 
-      status:
-        'open',
-
-      creator_id:
-        creatorId,
-
-      game_id:
-        number(gameId)
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
-
-  const {
-    error: joinError
-  } = await supabase
-    .from('tournament_players')
-    .insert({
-      tournament_id:
-        tournament.id,
-
-      user_id:
-        creatorId,
-
-      seed:
-        1
-    });
-
-  if (joinError) {
-    throw joinError;
-  }
-
-  return tournament;
-}
-
-async function joinTournament({
-  tournamentId,
-  userId
-}) {
-  const {
-    data: existing,
-    error: existingError
-  } = await supabase
-    .from('tournament_players')
-    .select('tournament_id,user_id')
-    .eq(
-      'tournament_id',
-      tournamentId
-    )
-    .eq(
-      'user_id',
-      userId
-    )
-    .maybeSingle();
-
-  if (existingError) {
-    throw existingError;
-  }
-
-  if (existing) {
-    throw new Error(
-      'You already joined this tournament.'
-    );
-  }
-
-  const {
-    data: tournament,
-    error: tournamentError
-  } = await supabase
-    .from('tournament_details')
-    .select('*')
-    .eq('id', tournamentId)
-    .single();
-
-  if (tournamentError) {
-    throw tournamentError;
-  }
-
-  if (
-    tournament.status !==
-    'open'
-  ) {
-    throw new Error(
-      'This tournament is not open.'
-    );
-  }
-
-  if (
-    number(
-      tournament.player_count
-    ) >=
-    number(
-      tournament.max_players
-    )
-  ) {
-    throw new Error(
-      'This tournament is full.'
-    );
-  }
-
-  const {
-    data: players,
-    error: playersError
-  } = await supabase
-    .from('tournament_players')
-    .select('user_id')
-    .eq(
-      'tournament_id',
-      tournamentId
-    );
-
-  if (playersError) {
-    throw playersError;
-  }
-
-  const { error } = await supabase
-    .from('tournament_players')
-    .insert({
-      tournament_id:
-        tournamentId,
-
-      user_id:
-        userId,
-
-      seed:
-        (players?.length || 0) + 1
-    });
+      p_max_players:
+        number(maxPlayers)
+    }
+  );
 
   if (error) throw error;
 }
 
-async function leaveTournament({
-  tournamentId,
-  userId
-}) {
-  const { error } = await supabase
-    .from('tournament_players')
-    .delete()
-    .eq(
-      'tournament_id',
-      tournamentId
-    )
-    .eq(
-      'user_id',
-      userId
-    );
+async function joinTournament(tournamentId) {
+  const { error } = await supabase.rpc(
+    'fr_join_tournament',
+    {
+      p_tournament_id:
+        number(tournamentId)
+    }
+  );
+
+  if (error) throw error;
+}
+
+async function leaveTournament(tournamentId) {
+  const { error } = await supabase.rpc(
+    'fr_leave_tournament',
+    {
+      p_tournament_id:
+        number(tournamentId)
+    }
+  );
 
   if (error) throw error;
 }
@@ -1267,42 +909,36 @@ async function updateTournamentStatus(
   tournamentId,
   status
 ) {
-  const update = {
-    status
-  };
+  const { error } = await supabase.rpc(
+    'fr_set_tournament_status',
+    {
+      p_tournament_id:
+        number(tournamentId),
 
-  if (status === 'active') {
-    update.start_at =
-      new Date().toISOString();
-  }
-
-  if (status === 'completed') {
-    update.completed_at =
-      new Date().toISOString();
-  }
-
-  const { error } = await supabase
-    .from('tournaments')
-    .update(update)
-    .eq('id', tournamentId);
+      p_status:
+        status
+    }
+  );
 
   if (error) throw error;
 }
 
-async function deleteTournament(
-  tournamentId
-) {
-  const { error } = await supabase
-    .from('tournaments')
-    .delete()
-    .eq('id', tournamentId);
+async function deleteTournament(tournamentId) {
+  const { error } = await supabase.rpc(
+    'fr_delete_tournament',
+    {
+      p_tournament_id:
+        number(tournamentId)
+    }
+  );
 
   if (error) throw error;
 }
 
 
 /* =========================================================
-   CLANS
+   SECURE CLANS
+   ALL WRITES NOW GO THROUGH RPC
 ========================================================= */
 
 async function getClanDetails() {
@@ -1318,9 +954,7 @@ async function getClanDetails() {
   return data || [];
 }
 
-async function getMyClanMemberships(
-  userId
-) {
+async function getMyClanMemberships(userId) {
   const { data, error } = await supabase
     .from('clan_members')
     .select(`
@@ -1335,9 +969,7 @@ async function getMyClanMemberships(
   return data || [];
 }
 
-async function getClanMembers(
-  clanId
-) {
+async function getClanMembers(clanId) {
   const {
     data: rows,
     error
@@ -1352,7 +984,9 @@ async function getClanMembers(
 
   if (error) throw error;
 
-  if (!rows?.length) return [];
+  if (!rows?.length) {
+    return [];
+  }
 
   const ids =
     rows.map(
@@ -1379,13 +1013,12 @@ async function getClanMembers(
   const profileMap = {};
 
   for (const profile of profiles || []) {
-    profileMap[
-      profile.id
-    ] = profile;
+    profileMap[profile.id] = profile;
   }
 
   return rows.map(row => ({
     ...row,
+
     profile:
       profileMap[
         row.user_id
@@ -1394,183 +1027,92 @@ async function getClanMembers(
 }
 
 async function createClan({
-  ownerId,
   name,
   description,
   gameId,
   maxMembers,
   isPublic
 }) {
-  const {
-    data: clan,
-    error
-  } = await supabase
-    .from('clans')
-    .insert({
-      name:
+  const { error } = await supabase.rpc(
+    'fr_create_clan',
+    {
+      p_name:
         name.trim(),
 
-      owner_id:
-        ownerId,
+      p_description:
+        description.trim(),
 
-      description:
-        description.trim() || null,
-
-      game_id:
+      p_game_id:
         number(gameId),
 
-      max_members:
+      p_max_members:
         number(maxMembers),
 
-      is_public:
-        Boolean(isPublic),
-
-      updated_at:
-        new Date().toISOString()
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
-
-  const {
-    error: memberError
-  } = await supabase
-    .from('clan_members')
-    .insert({
-      clan_id:
-        clan.id,
-
-      user_id:
-        ownerId,
-
-      role:
-        'owner'
-    });
-
-  if (memberError) {
-    throw memberError;
-  }
-
-  return clan;
-}
-
-async function joinClan({
-  clanId,
-  userId
-}) {
-  const {
-    data: existing,
-    error: existingError
-  } = await supabase
-    .from('clan_members')
-    .select('clan_id,user_id')
-    .eq('clan_id', clanId)
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  if (existingError) {
-    throw existingError;
-  }
-
-  if (existing) {
-    throw new Error(
-      'You are already in this clan.'
-    );
-  }
-
-  const {
-    data: clan,
-    error: clanError
-  } = await supabase
-    .from('clan_details')
-    .select('*')
-    .eq('id', clanId)
-    .single();
-
-  if (clanError) {
-    throw clanError;
-  }
-
-  if (!clan.is_public) {
-    throw new Error(
-      'This clan is private.'
-    );
-  }
-
-  if (
-    number(
-      clan.member_count
-    ) >=
-    number(
-      clan.max_members
-    )
-  ) {
-    throw new Error(
-      'This clan is full.'
-    );
-  }
-
-  const { error } = await supabase
-    .from('clan_members')
-    .insert({
-      clan_id:
-        clanId,
-
-      user_id:
-        userId,
-
-      role:
-        'member'
-    });
+      p_is_public:
+        Boolean(isPublic)
+    }
+  );
 
   if (error) throw error;
 }
 
-async function leaveClan({
-  clanId,
-  userId
-}) {
-  const { error } = await supabase
-    .from('clan_members')
-    .delete()
-    .eq('clan_id', clanId)
-    .eq('user_id', userId);
+async function joinClan(clanId) {
+  const { error } = await supabase.rpc(
+    'fr_join_clan',
+    {
+      p_clan_id:
+        number(clanId)
+    }
+  );
 
   if (error) throw error;
 }
 
-async function updateClan(
+async function leaveClan(clanId) {
+  const { error } = await supabase.rpc(
+    'fr_leave_clan',
+    {
+      p_clan_id:
+        number(clanId)
+    }
+  );
+
+  if (error) throw error;
+}
+
+async function setClanPrivacy(
   clanId,
-  updates
+  isPublic
 ) {
-  const { error } = await supabase
-    .from('clans')
-    .update({
-      ...updates,
+  const { error } = await supabase.rpc(
+    'fr_set_clan_privacy',
+    {
+      p_clan_id:
+        number(clanId),
 
-      updated_at:
-        new Date().toISOString()
-    })
-    .eq('id', clanId);
+      p_is_public:
+        Boolean(isPublic)
+    }
+  );
 
   if (error) throw error;
 }
 
-async function deleteClan(
-  clanId
-) {
-  const { error } = await supabase
-    .from('clans')
-    .delete()
-    .eq('id', clanId);
+async function deleteClan(clanId) {
+  const { error } = await supabase.rpc(
+    'fr_delete_clan',
+    {
+      p_clan_id:
+        number(clanId)
+    }
+  );
 
   if (error) throw error;
 }
 
 
 /* =========================================================
-   ACTIVITY FEED
+   ACTIVITY MEDIA + FEED
 ========================================================= */
 
 const ACTIVITY_MEDIA_BUCKET =
@@ -1602,9 +1144,7 @@ async function getActivityFeed() {
   return data || [];
 }
 
-async function getMyPostReactions(
-  userId
-) {
+async function getMyPostReactions(userId) {
   const { data, error } = await supabase
     .from('post_reactions')
     .select(`
@@ -1618,9 +1158,7 @@ async function getMyPostReactions(
   return data || [];
 }
 
-function cleanActivityFileName(
-  name = 'media'
-) {
+function cleanActivityFileName(name = 'media') {
   return name
     .replace(
       /[^a-zA-Z0-9._-]/g,
@@ -1636,28 +1174,20 @@ function cleanActivityFileName(
     );
 }
 
-function activityMediaKind(
-  mediaType = ''
-) {
+function activityMediaKind(mediaType = '') {
   const lower =
-    String(
-      mediaType
-    ).toLowerCase();
+    String(mediaType).toLowerCase();
 
   if (
     lower === 'image' ||
-    lower.startsWith(
-      'image/'
-    )
+    lower.startsWith('image/')
   ) {
     return 'image';
   }
 
   if (
     lower === 'video' ||
-    lower.startsWith(
-      'video/'
-    )
+    lower.startsWith('video/')
   ) {
     return 'video';
   }
@@ -1708,21 +1238,14 @@ async function uploadActivityMedia({
   const {
     error: uploadError
   } = await supabase.storage
-    .from(
-      ACTIVITY_MEDIA_BUCKET
-    )
+    .from(ACTIVITY_MEDIA_BUCKET)
     .upload(
       path,
       file,
       {
-        cacheControl:
-          '3600',
-
-        upsert:
-          false,
-
-        contentType:
-          file.type
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type
       }
     );
 
@@ -1733,21 +1256,14 @@ async function uploadActivityMedia({
   const {
     data: publicData
   } = supabase.storage
-    .from(
-      ACTIVITY_MEDIA_BUCKET
-    )
-    .getPublicUrl(
-      path
-    );
+    .from(ACTIVITY_MEDIA_BUCKET)
+    .getPublicUrl(path);
 
   if (
-    !publicData
-      ?.publicUrl
+    !publicData?.publicUrl
   ) {
     await supabase.storage
-      .from(
-        ACTIVITY_MEDIA_BUCKET
-      )
+      .from(ACTIVITY_MEDIA_BUCKET)
       .remove([
         path
       ]);
@@ -1766,22 +1282,17 @@ async function uploadActivityMedia({
   };
 }
 
-function activityMediaPathFromUrl(
-  url
-) {
+function activityMediaPathFromUrl(url) {
   if (!url) return null;
 
   const marker =
     `/storage/v1/object/public/${ACTIVITY_MEDIA_BUCKET}/`;
 
   const markerIndex =
-    url.indexOf(
-      marker
-    );
+    url.indexOf(marker);
 
   if (
-    markerIndex ===
-    -1
+    markerIndex === -1
   ) {
     return null;
   }
@@ -1826,16 +1337,12 @@ async function removeActivityMedia({
 
   const { error } =
     await supabase.storage
-      .from(
-        ACTIVITY_MEDIA_BUCKET
-      )
+      .from(ACTIVITY_MEDIA_BUCKET)
       .remove([
         path
       ]);
 
-  if (error) {
-    throw error;
-  }
+  if (error) throw error;
 }
 
 async function createActivityPost({
@@ -1875,9 +1382,7 @@ async function createActivityPost({
   if (error) throw error;
 }
 
-async function deleteActivityPost(
-  postId
-) {
+async function deleteActivityPost(postId) {
   const { error } = await supabase
     .from('posts')
     .delete()
@@ -1921,9 +1426,7 @@ async function removePostReaction({
   if (error) throw error;
 }
 
-async function getActivityComments(
-  postId
-) {
+async function getActivityComments(postId) {
   const { data, error } = await supabase
     .from('comment_details')
     .select('*')
@@ -1967,9 +1470,7 @@ async function createActivityComment({
   if (error) throw error;
 }
 
-async function deleteActivityComment(
-  commentId
-) {
+async function deleteActivityComment(commentId) {
   const { error } = await supabase
     .from('comments')
     .delete()
@@ -1980,16 +1481,14 @@ async function deleteActivityComment(
 
 
 /* =========================================================
-   AUTH
+   AUTH PAGE
 ========================================================= */
 
 function Auth() {
   const [
     mode,
     setMode
-  ] = useState(
-    'login'
-  );
+  ] = useState('login');
 
   const [
     email,
@@ -2021,9 +1520,7 @@ function Auth() {
     setMsg
   ] = useState('');
 
-  async function submit(
-    e
-  ) {
+  async function submit(e) {
     e.preventDefault();
 
     setBusy(true);
@@ -2031,8 +1528,7 @@ function Auth() {
 
     try {
       if (
-        mode ===
-        'login'
+        mode === 'login'
       ) {
         await signIn(
           email,
@@ -2051,9 +1547,7 @@ function Auth() {
           'Account created. Check your email if confirmation is enabled.'
         );
 
-        setMode(
-          'login'
-        );
+        setMode('login');
       }
 
     } catch (error) {
@@ -2100,7 +1594,6 @@ function Auth() {
 
           {mode === 'signup' && (
             <>
-
               <label>
                 Username
 
@@ -2127,7 +1620,6 @@ function Auth() {
                   }
                 />
               </label>
-
             </>
           )}
 
@@ -2246,7 +1738,7 @@ function Stat({
 
 
 /* =========================================================
-   CHART
+   DASHBOARD CHART
 ========================================================= */
 
 function Chart() {
@@ -2371,9 +1863,7 @@ function Dashboard({
         <button
           className="primary"
           onClick={() =>
-            setPage(
-              'stats'
-            )
+            setPage('stats')
           }
         >
           <BarChart3 size={17} />
@@ -2501,8 +1991,7 @@ function Dashboard({
           <div className="progress">
             <i
               style={{
-                width:
-                  '0%'
+                width: '0%'
               }}
             />
           </div>
@@ -2542,9 +2031,7 @@ function Dashboard({
           <button
             className="linkbtn"
             onClick={() =>
-              setPage(
-                'stats'
-              )
+              setPage('stats')
             }
           >
             See all
@@ -2563,12 +2050,9 @@ function Dashboard({
                 openGame(game)
               }
               style={{
-                all:
-                  'unset',
-                cursor:
-                  'pointer',
-                display:
-                  'block'
+                all: 'unset',
+                cursor: 'pointer',
+                display: 'block'
               }}
             >
 
@@ -2625,7 +2109,7 @@ function Dashboard({
 
 
 /* =========================================================
-   MY STATS
+   STATS PAGE
 ========================================================= */
 
 function Stats({
@@ -2735,8 +2219,7 @@ function Stats({
                     openGame(game)
                   }
                   style={{
-                    cursor:
-                      'pointer'
+                    cursor: 'pointer'
                   }}
                 >
 
@@ -2942,16 +2425,12 @@ function LeaderboardPage({
   const [
     gameFilter,
     setGameFilter
-  ] = useState(
-    'Overall'
-  );
+  ] = useState('Overall');
 
   const [
     metric,
     setMetric
-  ] = useState(
-    'kills'
-  );
+  ] = useState('kills');
 
   const [
     loading,
@@ -2977,13 +2456,8 @@ function LeaderboardPage({
           loadGameLeaderboard()
         ]);
 
-        setOverallRows(
-          overall
-        );
-
-        setGameRows(
-          byGame
-        );
+        setOverallRows(overall);
+        setGameRows(byGame);
 
       } catch (err) {
         setError(
@@ -3112,9 +2586,7 @@ function LeaderboardPage({
                   : ''
               }
               onClick={() =>
-                setGameFilter(
-                  game
-                )
+                setGameFilter(game)
               }
             >
               {game}
@@ -3229,11 +2701,8 @@ function LeaderboardPage({
 
                   <div
                     style={{
-                      minWidth:
-                        '40px',
-
-                      fontWeight:
-                        '800'
+                      minWidth: '40px',
+                      fontWeight: '800'
                     }}
                   >
                     #{index + 1}
@@ -3247,8 +2716,7 @@ function LeaderboardPage({
 
                   <div
                     style={{
-                      flex:
-                        1
+                      flex: 1
                     }}
                   >
 
@@ -3268,9 +2736,7 @@ function LeaderboardPage({
                   <div className="metric">
 
                     <b>
-                      {metricValue(
-                        row
-                      )}
+                      {metricValue(row)}
                     </b>
 
                     <small>
@@ -3331,9 +2797,7 @@ function AchievementsPage({
           user.id
         );
 
-      setAchievements(
-        rows
-      );
+      setAchievements(rows);
 
     } catch (err) {
       setError(
@@ -3386,9 +2850,7 @@ function AchievementsPage({
       0
     );
 
-  function getProgress(
-    achievement
-  ) {
+  function getProgress(achievement) {
     const rule =
       achievementRules[
         achievement.name
@@ -3396,12 +2858,8 @@ function AchievementsPage({
 
     if (!rule) {
       return {
-        supported:
-          false,
-
-        percent:
-          0,
-
+        supported: false,
+        percent: 0,
         label:
           'Match-history tracking required'
       };
@@ -3426,9 +2884,7 @@ function AchievementsPage({
       );
 
     return {
-      supported:
-        true,
-
+      supported: true,
       percent,
 
       label:
@@ -3465,11 +2921,8 @@ function AchievementsPage({
         </div>
 
         <div className="achievement-points">
-
           <Award size={18} />
-
           {earnedPoints} points
-
         </div>
 
       </div>
@@ -3548,9 +3001,7 @@ function AchievementsPage({
 
               return (
                 <div
-                  key={
-                    achievement.id
-                  }
+                  key={achievement.id}
                   className={`achievement ${
                     isUnlocked
                       ? 'unlocked'
@@ -3564,8 +3015,7 @@ function AchievementsPage({
 
                   <div
                     style={{
-                      flex:
-                        1
+                      flex: 1
                     }}
                   >
 
@@ -3587,7 +3037,6 @@ function AchievementsPage({
 
                     {progress.supported && (
                       <>
-
                         <div
                           className="progress"
                           style={{
@@ -3595,20 +3044,17 @@ function AchievementsPage({
                               '12px'
                           }}
                         >
-
                           <i
                             style={{
                               width:
                                 `${progress.percent}%`
                             }}
                           />
-
                         </div>
 
                         <small>
                           {progress.label}
                         </small>
-
                       </>
                     )}
 
@@ -3616,8 +3062,7 @@ function AchievementsPage({
 
                   <strong
                     style={{
-                      fontSize:
-                        '22px'
+                      fontSize: '22px'
                     }}
                   >
                     {isUnlocked
@@ -3640,7 +3085,7 @@ function AchievementsPage({
 
 
 /* =========================================================
-   CHALLENGES PAGE
+   SECURE CHALLENGES PAGE
 ========================================================= */
 
 function ChallengesPage({
@@ -3674,16 +3119,12 @@ function ChallengesPage({
   const [
     metric,
     setMetric
-  ] = useState(
-    'kills'
-  );
+  ] = useState('kills');
 
   const [
     target,
     setTarget
-  ] = useState(
-    '100'
-  );
+  ] = useState('100');
 
   const [
     loading,
@@ -3710,19 +3151,15 @@ function ChallengesPage({
         challengeRows
       ] = await Promise.all([
         getGames(),
-
         getFriendships(
           user.id
         ),
-
         getChallenges(
           user.id
         )
       ]);
 
-      setGames(
-        gameList
-      );
+      setGames(gameList);
 
       setFriends(
         friendshipData.friends
@@ -3758,9 +3195,7 @@ function ChallengesPage({
     load();
   }, [user.id]);
 
-  async function submitChallenge(
-    e
-  ) {
+  async function submitChallenge(e) {
     e.preventDefault();
 
     setBusy(true);
@@ -3780,9 +3215,7 @@ function ChallengesPage({
       }
 
       if (
-        number(
-          target
-        ) <= 0
+        number(target) <= 0
       ) {
         throw new Error(
           'Target must be greater than zero.'
@@ -3790,28 +3223,21 @@ function ChallengesPage({
       }
 
       await createChallenge({
-        creatorId:
-          user.id,
-
         opponentId,
 
         gameId:
-          number(
-            gameId
-          ),
+          number(gameId),
 
         metric,
 
         target:
-          number(
-            target
-          )
+          number(target)
       });
 
       await load();
 
       setMessage(
-        'Challenge sent.'
+        'Challenge sent securely.'
       );
 
     } catch (error) {
@@ -3825,15 +3251,13 @@ function ChallengesPage({
     }
   }
 
-  async function accept(
-    row
-  ) {
+  async function accept(row) {
     setBusy(true);
     setMessage('');
 
     try {
       await acceptChallenge(
-        row
+        row.id
       );
 
       await load();
@@ -3853,9 +3277,7 @@ function ChallengesPage({
     }
   }
 
-  async function decline(
-    row
-  ) {
+  async function decline(row) {
     setBusy(true);
     setMessage('');
 
@@ -3881,9 +3303,7 @@ function ChallengesPage({
     }
   }
 
-  async function cancel(
-    row
-  ) {
+  async function cancel(row) {
     setBusy(true);
     setMessage('');
 
@@ -3921,19 +3341,16 @@ function ChallengesPage({
             'active'
         );
 
-      for (
-        const challenge
-        of active
-      ) {
+      for (const challenge of active) {
         await refreshChallenge(
-          challenge
+          challenge.id
         );
       }
 
       await load();
 
       setMessage(
-        'Challenge progress refreshed.'
+        'Challenge progress securely refreshed from game stats.'
       );
 
     } catch (error) {
@@ -3979,9 +3396,7 @@ function ChallengesPage({
         'completed'
     );
 
-  function opponentName(
-    row
-  ) {
+  function opponentName(row) {
     if (
       row.creator_id ===
       user.id
@@ -4000,20 +3415,15 @@ function ChallengesPage({
     );
   }
 
-  function challengeCard(
-    row
-  ) {
+  function challengeCard(row) {
     const targetValue =
       Math.max(
         1,
-        number(
-          row.target
-        )
+        number(row.target)
       );
 
     const myProgress =
-      row.creator_id ===
-      user.id
+      row.creator_id === user.id
         ? number(
             row.creator_progress
           )
@@ -4022,8 +3432,7 @@ function ChallengesPage({
           );
 
     const theirProgress =
-      row.creator_id ===
-      user.id
+      row.creator_id === user.id
         ? number(
             row.opponent_progress
           )
@@ -4050,9 +3459,7 @@ function ChallengesPage({
       );
 
     const name =
-      opponentName(
-        row
-      );
+      opponentName(row);
 
     const iWon =
       row.status ===
@@ -4202,7 +3609,7 @@ function ChallengesPage({
         <div>
 
           <div className="eyebrow">
-            LIVE CHALLENGES
+            SECURE CHALLENGES
           </div>
 
           <h1>
@@ -4217,9 +3624,7 @@ function ChallengesPage({
 
         <button
           className="primary"
-          onClick={
-            refreshAll
-          }
+          onClick={refreshAll}
           disabled={busy}
         >
           <RefreshCw size={17} />
@@ -4436,8 +3841,7 @@ function ChallengesPage({
 
               <div
                 style={{
-                  flex:
-                    1
+                  flex: 1
                 }}
               >
 
@@ -4462,9 +3866,7 @@ function ChallengesPage({
               <button
                 className="primary"
                 onClick={() =>
-                  accept(
-                    row
-                  )
+                  accept(row)
                 }
                 disabled={busy}
               >
@@ -4475,9 +3877,7 @@ function ChallengesPage({
               <button
                 className="iconbtn"
                 onClick={() =>
-                  decline(
-                    row
-                  )
+                  decline(row)
                 }
                 disabled={busy}
               >
@@ -4527,8 +3927,7 @@ function ChallengesPage({
 
               <div
                 style={{
-                  flex:
-                    1
+                  flex: 1
                 }}
               >
 
@@ -4547,9 +3946,7 @@ function ChallengesPage({
               <button
                 className="logout"
                 onClick={() =>
-                  cancel(
-                    row
-                  )
+                  cancel(row)
                 }
                 disabled={busy}
               >
@@ -4597,7 +3994,7 @@ function ChallengesPage({
 
 
 /* =========================================================
-   TOURNAMENTS PAGE
+   SECURE TOURNAMENTS PAGE
 ========================================================= */
 
 function TournamentsPage({
@@ -4704,6 +4101,37 @@ function TournamentsPage({
         );
       }
 
+      if (selectedTournament) {
+        const refreshed =
+          tournamentRows.find(
+            row =>
+              row.id ===
+              selectedTournament.id
+          );
+
+        if (refreshed) {
+          setSelectedTournament(
+            refreshed
+          );
+
+          const refreshedPlayers =
+            await getTournamentPlayers(
+              refreshed.id
+            );
+
+          setPlayers(
+            refreshedPlayers
+          );
+
+        } else {
+          setSelectedTournament(
+            null
+          );
+
+          setPlayers([]);
+        }
+      }
+
     } catch (error) {
       setMessage(
         error.message ||
@@ -4719,9 +4147,7 @@ function TournamentsPage({
     load();
   }, [user.id]);
 
-  function isJoined(
-    tournamentId
-  ) {
+  function isJoined(tournamentId) {
     return memberships.some(
       membership =>
         membership
@@ -4730,44 +4156,44 @@ function TournamentsPage({
     );
   }
 
-  async function create(
-    e
-  ) {
+  async function create(e) {
     e.preventDefault();
 
     setBusy(true);
     setMessage('');
 
     try {
+      if (!name.trim()) {
+        throw new Error(
+          'Enter a tournament name.'
+        );
+      }
+
+      if (!gameId) {
+        throw new Error(
+          'Choose a game.'
+        );
+      }
+
       await createTournament({
-        creatorId:
-          user.id,
-
         name,
-
         description,
 
         gameId:
-          number(
-            gameId
-          ),
+          number(gameId),
 
         maxPlayers:
-          number(
-            maxPlayers
-          )
+          number(maxPlayers)
       });
 
       setName('');
       setDescription('');
-      setMaxPlayers(
-        '8'
-      );
+      setMaxPlayers('8');
 
       await load();
 
       setMessage(
-        'Tournament created.'
+        'Tournament securely created.'
       );
 
     } catch (error) {
@@ -4781,9 +4207,7 @@ function TournamentsPage({
     }
   }
 
-  async function openTournament(
-    row
-  ) {
+  async function openTournament(row) {
     setBusy(true);
     setMessage('');
 
@@ -4797,9 +4221,12 @@ function TournamentsPage({
         row
       );
 
-      setPlayers(
-        result
-      );
+      setPlayers(result);
+
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
 
     } catch (error) {
       setMessage(
@@ -4812,20 +4239,14 @@ function TournamentsPage({
     }
   }
 
-  async function join(
-    row
-  ) {
+  async function join(row) {
     setBusy(true);
     setMessage('');
 
     try {
-      await joinTournament({
-        tournamentId:
-          row.id,
-
-        userId:
-          user.id
-      });
+      await joinTournament(
+        row.id
+      );
 
       await load();
 
@@ -4844,37 +4265,20 @@ function TournamentsPage({
     }
   }
 
-  async function leave(
-    row
-  ) {
+  async function leave(row) {
     setBusy(true);
     setMessage('');
 
     try {
-      if (
-        row.creator_id ===
-        user.id
-      ) {
-        throw new Error(
-          'The tournament creator cannot leave.'
-        );
-      }
-
-      await leaveTournament({
-        tournamentId:
-          row.id,
-
-        userId:
-          user.id
-      });
-
-      setSelectedTournament(
-        null
+      await leaveTournament(
+        row.id
       );
 
-      setPlayers([]);
-
       await load();
+
+      setMessage(
+        `You left ${row.name}.`
+      );
 
     } catch (error) {
       setMessage(
@@ -4887,23 +4291,11 @@ function TournamentsPage({
     }
   }
 
-  async function start(
-    row
-  ) {
+  async function start(row) {
     setBusy(true);
     setMessage('');
 
     try {
-      if (
-        number(
-          row.player_count
-        ) < 2
-      ) {
-        throw new Error(
-          'At least 2 players are required.'
-        );
-      }
-
       await updateTournamentStatus(
         row.id,
         'active'
@@ -4911,11 +4303,9 @@ function TournamentsPage({
 
       await load();
 
-      setSelectedTournament({
-        ...row,
-        status:
-          'active'
-      });
+      setMessage(
+        'Tournament started.'
+      );
 
     } catch (error) {
       setMessage(
@@ -4928,9 +4318,7 @@ function TournamentsPage({
     }
   }
 
-  async function complete(
-    row
-  ) {
+  async function complete(row) {
     setBusy(true);
     setMessage('');
 
@@ -4942,11 +4330,9 @@ function TournamentsPage({
 
       await load();
 
-      setSelectedTournament({
-        ...row,
-        status:
-          'completed'
-      });
+      setMessage(
+        'Tournament completed.'
+      );
 
     } catch (error) {
       setMessage(
@@ -4959,14 +4345,13 @@ function TournamentsPage({
     }
   }
 
-  async function remove(
-    row
-  ) {
-    if (
-      !window.confirm(
-        `Delete "${row.name}"?`
-      )
-    ) {
+  async function remove(row) {
+    const confirmed =
+      window.confirm(
+        `Delete "${row.name}"? This cannot be undone.`
+      );
+
+    if (!confirmed) {
       return;
     }
 
@@ -4985,6 +4370,10 @@ function TournamentsPage({
       setPlayers([]);
 
       await load();
+
+      setMessage(
+        'Tournament deleted.'
+      );
 
     } catch (error) {
       setMessage(
@@ -5012,6 +4401,14 @@ function TournamentsPage({
         row.id
       );
 
+    const full =
+      number(
+        row.player_count
+      ) >=
+      number(
+        row.max_players
+      );
+
     return (
       <div className="page">
 
@@ -5034,7 +4431,7 @@ function TournamentsPage({
           <div>
 
             <div className="eyebrow">
-              LIVE TOURNAMENT
+              SECURE TOURNAMENT
             </div>
 
             <h1>
@@ -5042,7 +4439,8 @@ function TournamentsPage({
             </h1>
 
             <p>
-              {row.game_name}
+              {row.game_name ||
+                'FragRank Tournament'}
             </p>
 
           </div>
@@ -5054,6 +4452,12 @@ function TournamentsPage({
           </span>
 
         </div>
+
+        {message && (
+          <div className="notice">
+            {message}
+          </div>
+        )}
 
         <div className="stats">
 
@@ -5089,76 +4493,129 @@ function TournamentsPage({
           <Stat
             icon={Trophy}
             label="Status"
-            value={
-              String(
-                row.status
-              ).toUpperCase()
-            }
+            value={String(
+              row.status
+            ).toUpperCase()}
           />
 
         </div>
 
+        {row.description && (
+
+          <section className="panel">
+
+            <h2>
+              About
+            </h2>
+
+            <p>
+              {row.description}
+            </p>
+
+          </section>
+
+        )}
+
         <section className="panel">
 
           <div className="panel-head">
-            <h2>
-              Players
-            </h2>
+
+            <div>
+
+              <h2>
+                Tournament Players
+              </h2>
+
+              <span>
+                {players.length} players
+              </span>
+
+            </div>
+
           </div>
 
-          {players.map(
-            (item, index) => {
+          {players.length === 0 ? (
 
-              const playerName =
-                item.profile
-                  ?.display_name ||
-                item.profile
-                  ?.username ||
-                'Player';
+            <p className="muted">
+              No players yet.
+            </p>
 
-              return (
-                <div
-                  className="friend"
-                  key={
-                    item.user_id
-                  }
-                >
+          ) : (
 
-                  <div>
-                    #{item.seed ||
-                      index + 1}
-                  </div>
+            players.map(
+              (item, index) => {
 
-                  <div className="avatar">
-                    {playerName[0]
-                      .toUpperCase()}
-                  </div>
+                const playerName =
+                  item.profile
+                    ?.display_name ||
+                  item.profile
+                    ?.username ||
+                  'Player';
 
+                return (
                   <div
-                    style={{
-                      flex:
-                        1
-                    }}
+                    className="friend"
+                    key={
+                      item.user_id
+                    }
                   >
-                    <b>
-                      {playerName}
-                    </b>
 
-                    <small>
-                      @{item.profile
-                        ?.username ||
-                        'player'}
-                    </small>
+                    <div
+                      style={{
+                        minWidth:
+                          '35px',
+
+                        fontWeight:
+                          '800'
+                      }}
+                    >
+                      #{item.seed ||
+                        index + 1}
+                    </div>
+
+                    <div className="avatar">
+                      {playerName
+                        .charAt(0)
+                        .toUpperCase()}
+                    </div>
+
+                    <div
+                      style={{
+                        flex:
+                          1
+                      }}
+                    >
+
+                      <b>
+                        {playerName}
+                      </b>
+
+                      <small>
+                        @{item.profile
+                          ?.username ||
+                          'player'}
+                      </small>
+
+                    </div>
+
                   </div>
+                );
+              }
+            )
 
-                </div>
-              );
-            }
           )}
 
         </section>
 
         <section className="panel">
+
+          <div className="panel-head">
+
+            <h2>
+              Tournament Actions
+            </h2>
+
+          </div>
 
           <div
             style={{
@@ -5175,17 +4632,17 @@ function TournamentsPage({
 
             {!joined &&
               row.status ===
-                'open' && (
+                'open' &&
+              !full && (
 
               <button
                 className="primary"
                 onClick={() =>
-                  join(
-                    row
-                  )
+                  join(row)
                 }
                 disabled={busy}
               >
+                <UserPlus size={17} />
                 Join Tournament
               </button>
 
@@ -5199,9 +4656,7 @@ function TournamentsPage({
               <button
                 className="logout"
                 onClick={() =>
-                  leave(
-                    row
-                  )
+                  leave(row)
                 }
                 disabled={busy}
               >
@@ -5217,12 +4672,11 @@ function TournamentsPage({
               <button
                 className="primary"
                 onClick={() =>
-                  start(
-                    row
-                  )
+                  start(row)
                 }
                 disabled={busy}
               >
+                <Trophy size={17} />
                 Start Tournament
               </button>
 
@@ -5235,12 +4689,11 @@ function TournamentsPage({
               <button
                 className="primary"
                 onClick={() =>
-                  complete(
-                    row
-                  )
+                  complete(row)
                 }
                 disabled={busy}
               >
+                <Check size={17} />
                 Complete Tournament
               </button>
 
@@ -5251,9 +4704,7 @@ function TournamentsPage({
               <button
                 className="logout"
                 onClick={() =>
-                  remove(
-                    row
-                  )
+                  remove(row)
                 }
                 disabled={busy}
               >
@@ -5278,7 +4729,7 @@ function TournamentsPage({
         <div>
 
           <div className="eyebrow">
-            LIVE TOURNAMENTS
+            SECURE TOURNAMENTS
           </div>
 
           <h1>
@@ -5293,9 +4744,7 @@ function TournamentsPage({
 
         <button
           className="primary"
-          onClick={
-            load
-          }
+          onClick={load}
           disabled={busy}
         >
           <RefreshCw size={17} />
@@ -5321,7 +4770,7 @@ function TournamentsPage({
             </h2>
 
             <span>
-              Create a competitive event
+              Create a competitive FragRank event
             </span>
 
           </div>
@@ -5338,15 +4787,13 @@ function TournamentsPage({
             Tournament Name
 
             <input
-              value={
-                name
+              value={name}
+              onChange={e =>
+                setName(
+                  e.target.value
+                )
               }
-              onChange={
-                e =>
-                  setName(
-                    e.target.value
-                  )
-              }
+              placeholder="Example: FragRank Showdown"
               required
             />
           </label>
@@ -5355,14 +4802,11 @@ function TournamentsPage({
             Description
 
             <input
-              value={
-                description
-              }
-              onChange={
-                e =>
-                  setDescription(
-                    e.target.value
-                  )
+              value={description}
+              onChange={e =>
+                setDescription(
+                  e.target.value
+                )
               }
             />
           </label>
@@ -5371,33 +4815,25 @@ function TournamentsPage({
             Game
 
             <select
-              value={
-                gameId
+              value={gameId}
+              onChange={e =>
+                setGameId(
+                  e.target.value
+                )
               }
-              onChange={
-                e =>
-                  setGameId(
-                    e.target.value
-                  )
-              }
+              required
             >
 
-              {games.map(
-                game => (
+              {games.map(game => (
 
-                  <option
-                    key={
-                      game.id
-                    }
-                    value={
-                      game.id
-                    }
-                  >
-                    {game.name}
-                  </option>
+                <option
+                  key={game.id}
+                  value={game.id}
+                >
+                  {game.name}
+                </option>
 
-                )
-              )}
+              ))}
 
             </select>
 
@@ -5407,14 +4843,11 @@ function TournamentsPage({
             Maximum Players
 
             <select
-              value={
-                maxPlayers
-              }
-              onChange={
-                e =>
-                  setMaxPlayers(
-                    e.target.value
-                  )
+              value={maxPlayers}
+              onChange={e =>
+                setMaxPlayers(
+                  e.target.value
+                )
               }
             >
 
@@ -5482,14 +4915,25 @@ function TournamentsPage({
 
       ) : (
 
-        tournaments.map(
-          row => (
+        tournaments.map(row => {
 
+          const joined =
+            isJoined(
+              row.id
+            );
+
+          const full =
+            number(
+              row.player_count
+            ) >=
+            number(
+              row.max_players
+            );
+
+          return (
             <section
               className="panel"
-              key={
-                row.id
-              }
+              key={row.id}
               style={{
                 marginBottom:
                   '16px'
@@ -5527,22 +4971,119 @@ function TournamentsPage({
 
               </div>
 
-              <button
-                className="primary"
-                onClick={() =>
-                  openTournament(
-                    row
-                  )
-                }
+              {row.description && (
+                <p>
+                  {row.description}
+                </p>
+              )}
+
+              <div
+                className="friend"
+                style={{
+                  marginTop:
+                    '12px'
+                }}
               >
-                View Tournament
-                <ChevronRight size={16} />
-              </button>
+
+                <div className="avatar">
+                  <Trophy size={18} />
+                </div>
+
+                <div
+                  style={{
+                    flex: 1
+                  }}
+                >
+
+                  <b>
+                    {row.creator_display_name ||
+                      row.creator_username ||
+                      'Player'}
+                  </b>
+
+                  <small>
+                    Host • {full
+                      ? 'Tournament full'
+                      : `${Math.max(
+                          0,
+                          number(
+                            row.max_players
+                          ) -
+                          number(
+                            row.player_count
+                          )
+                        )} spots remaining`}
+                  </small>
+
+                </div>
+
+                {joined && (
+                  <span className="pill">
+                    JOINED
+                  </span>
+                )}
+
+                {row.creator_id ===
+                  user.id && (
+                  <span className="pill">
+                    HOST
+                  </span>
+                )}
+
+              </div>
+
+              <div
+                style={{
+                  display:
+                    'flex',
+
+                  flexWrap:
+                    'wrap',
+
+                  gap:
+                    '10px',
+
+                  marginTop:
+                    '14px'
+                }}
+              >
+
+                <button
+                  className="primary"
+                  onClick={() =>
+                    openTournament(
+                      row
+                    )
+                  }
+                  disabled={busy}
+                >
+                  View Tournament
+                  <ChevronRight size={16} />
+                </button>
+
+                {!joined &&
+                  row.status ===
+                    'open' &&
+                  !full && (
+
+                  <button
+                    className="linkbtn"
+                    onClick={() =>
+                      join(row)
+                    }
+                    disabled={busy}
+                  >
+                    <UserPlus size={16} />
+                    Join
+                  </button>
+
+                )}
+
+              </div>
 
             </section>
-
-          )
-        )
+          );
+        })
 
       )}
 
@@ -5552,7 +5093,7 @@ function TournamentsPage({
 
 
 /* =========================================================
-   CLANS PAGE
+   SECURE CLANS PAGE
 ========================================================= */
 
 function ClansPage({
@@ -5601,9 +5142,7 @@ function ClansPage({
   const [
     maxMembers,
     setMaxMembers
-  ] = useState(
-    '25'
-  );
+  ] = useState('25');
 
   const [
     isPublic,
@@ -5666,6 +5205,37 @@ function ClansPage({
         );
       }
 
+      if (selectedClan) {
+        const refreshed =
+          clanRows.find(
+            row =>
+              row.id ===
+              selectedClan.id
+          );
+
+        if (refreshed) {
+          setSelectedClan(
+            refreshed
+          );
+
+          const refreshedMembers =
+            await getClanMembers(
+              refreshed.id
+            );
+
+          setClanMembers(
+            refreshedMembers
+          );
+
+        } else {
+          setSelectedClan(
+            null
+          );
+
+          setClanMembers([]);
+        }
+      }
+
     } catch (error) {
       setMessage(
         error.message ||
@@ -5681,9 +5251,7 @@ function ClansPage({
     load();
   }, [user.id]);
 
-  function isMember(
-    clanId
-  ) {
+  function isMember(clanId) {
     return memberships.some(
       membership =>
         membership.clan_id ===
@@ -5691,9 +5259,7 @@ function ClansPage({
     );
   }
 
-  function myRole(
-    clanId
-  ) {
+  function myRole(clanId) {
     return memberships.find(
       membership =>
         membership.clan_id ===
@@ -5701,9 +5267,7 @@ function ClansPage({
     )?.role;
   }
 
-  async function create(
-    e
-  ) {
+  async function create(e) {
     e.preventDefault();
 
     setBusy(true);
@@ -5716,42 +5280,34 @@ function ClansPage({
         );
       }
 
+      if (!gameId) {
+        throw new Error(
+          'Choose a primary game.'
+        );
+      }
+
       await createClan({
-        ownerId:
-          user.id,
-
         name,
-
         description,
 
         gameId:
-          number(
-            gameId
-          ),
+          number(gameId),
 
         maxMembers:
-          number(
-            maxMembers
-          ),
+          number(maxMembers),
 
         isPublic
       });
 
       setName('');
       setDescription('');
-
-      setMaxMembers(
-        '25'
-      );
-
-      setIsPublic(
-        true
-      );
+      setMaxMembers('25');
+      setIsPublic(true);
 
       await load();
 
       setMessage(
-        'Clan created successfully.'
+        'Clan securely created.'
       );
 
     } catch (error) {
@@ -5765,20 +5321,14 @@ function ClansPage({
     }
   }
 
-  async function join(
-    row
-  ) {
+  async function join(row) {
     setBusy(true);
     setMessage('');
 
     try {
-      await joinClan({
-        clanId:
-          row.id,
-
-        userId:
-          user.id
-      });
+      await joinClan(
+        row.id
+      );
 
       await load();
 
@@ -5797,39 +5347,20 @@ function ClansPage({
     }
   }
 
-  async function leave(
-    row
-  ) {
+  async function leave(row) {
     setBusy(true);
     setMessage('');
 
     try {
-      if (
-        row.owner_id ===
-        user.id
-      ) {
-        throw new Error(
-          'The clan owner cannot leave. Delete the clan instead.'
-        );
-      }
-
-      await leaveClan({
-        clanId:
-          row.id,
-
-        userId:
-          user.id
-      });
-
-      setSelectedClan(
-        null
-      );
-
-      setClanMembers(
-        []
+      await leaveClan(
+        row.id
       );
 
       await load();
+
+      setMessage(
+        `You left ${row.name}.`
+      );
 
     } catch (error) {
       setMessage(
@@ -5842,9 +5373,7 @@ function ClansPage({
     }
   }
 
-  async function openClan(
-    row
-  ) {
+  async function openClan(row) {
     setBusy(true);
     setMessage('');
 
@@ -5862,10 +5391,15 @@ function ClansPage({
         result
       );
 
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
+
     } catch (error) {
       setMessage(
         error.message ||
-        'Could not load clan.'
+        'Could not load clan members.'
       );
 
     } finally {
@@ -5873,9 +5407,7 @@ function ClansPage({
     }
   }
 
-  async function togglePrivacy(
-    row
-  ) {
+  async function togglePrivacy(row) {
     setBusy(true);
     setMessage('');
 
@@ -5883,26 +5415,23 @@ function ClansPage({
       const nextPublic =
         !row.is_public;
 
-      await updateClan(
+      await setClanPrivacy(
         row.id,
-        {
-          is_public:
-            nextPublic
-        }
+        nextPublic
       );
 
-      setSelectedClan({
-        ...row,
-        is_public:
-          nextPublic
-      });
-
       await load();
+
+      setMessage(
+        nextPublic
+          ? 'Clan is now public.'
+          : 'Clan is now private.'
+      );
 
     } catch (error) {
       setMessage(
         error.message ||
-        'Could not update clan.'
+        'Could not update clan privacy.'
       );
 
     } finally {
@@ -5910,14 +5439,13 @@ function ClansPage({
     }
   }
 
-  async function removeClan(
-    row
-  ) {
-    if (
-      !window.confirm(
-        `Delete "${row.name}"?`
-      )
-    ) {
+  async function removeClan(row) {
+    const confirmed =
+      window.confirm(
+        `Delete "${row.name}"? This cannot be undone.`
+      );
+
+    if (!confirmed) {
       return;
     }
 
@@ -5933,11 +5461,13 @@ function ClansPage({
         null
       );
 
-      setClanMembers(
-        []
-      );
+      setClanMembers([]);
 
       await load();
+
+      setMessage(
+        'Clan deleted.'
+      );
 
     } catch (error) {
       setMessage(
@@ -5950,9 +5480,7 @@ function ClansPage({
     }
   }
 
-  if (
-    selectedClan
-  ) {
+  if (selectedClan) {
     const row =
       selectedClan;
 
@@ -5983,9 +5511,7 @@ function ClansPage({
               null
             );
 
-            setClanMembers(
-              []
-            );
+            setClanMembers([]);
           }}
         >
           <ChevronLeft size={18} />
@@ -5997,7 +5523,7 @@ function ClansPage({
           <div>
 
             <div className="eyebrow">
-              LIVE CLAN
+              SECURE CLAN
             </div>
 
             <h1>
@@ -6018,6 +5544,12 @@ function ClansPage({
           </span>
 
         </div>
+
+        {message && (
+          <div className="notice">
+            {message}
+          </div>
+        )}
 
         <div className="stats">
 
@@ -6057,11 +5589,9 @@ function ClansPage({
               owner
                 ? 'OWNER'
                 : joined
-                ? (
-                    myRole(
-                      row.id
-                    ) ||
-                    'MEMBER'
+                ? String(
+                    myRole(row.id) ||
+                    'member'
                   ).toUpperCase()
                 : 'NOT JOINED'
             }
@@ -6089,18 +5619,29 @@ function ClansPage({
 
           <div className="panel-head">
 
-            <h2>
-              Clan Members
-            </h2>
+            <div>
 
-            <span>
-              {clanMembers.length}
-            </span>
+              <h2>
+                Clan Members
+              </h2>
+
+              <span>
+                {clanMembers.length} members
+              </span>
+
+            </div>
 
           </div>
 
-          {clanMembers.map(
-            member => {
+          {clanMembers.length === 0 ? (
+
+            <p className="muted">
+              No members yet.
+            </p>
+
+          ) : (
+
+            clanMembers.map(member => {
 
               const playerName =
                 member.profile
@@ -6118,14 +5659,14 @@ function ClansPage({
                 >
 
                   <div className="avatar">
-                    {playerName[0]
+                    {playerName
+                      .charAt(0)
                       .toUpperCase()}
                   </div>
 
                   <div
                     style={{
-                      flex:
-                        1
+                      flex: 1
                     }}
                   >
 
@@ -6150,23 +5691,30 @@ function ClansPage({
 
                 </div>
               );
-            }
+            })
+
           )}
 
         </section>
 
         <section className="panel">
 
+          <div className="panel-head">
+            <h2>
+              Clan Actions
+            </h2>
+          </div>
+
           <div
             style={{
               display:
                 'flex',
 
-              flexWrap:
-                'wrap',
-
               gap:
-                '10px'
+                '10px',
+
+              flexWrap:
+                'wrap'
             }}
           >
 
@@ -6177,12 +5725,11 @@ function ClansPage({
               <button
                 className="primary"
                 onClick={() =>
-                  join(
-                    row
-                  )
+                  join(row)
                 }
                 disabled={busy}
               >
+                <UserPlus size={17} />
                 Join Clan
               </button>
 
@@ -6194,9 +5741,7 @@ function ClansPage({
               <button
                 className="logout"
                 onClick={() =>
-                  leave(
-                    row
-                  )
+                  leave(row)
                 }
                 disabled={busy}
               >
@@ -6216,6 +5761,8 @@ function ClansPage({
                 }
                 disabled={busy}
               >
+                <Shield size={17} />
+
                 {row.is_public
                   ? 'Make Private'
                   : 'Make Public'}
@@ -6255,7 +5802,7 @@ function ClansPage({
         <div>
 
           <div className="eyebrow">
-            LIVE CLANS
+            SECURE CLANS
           </div>
 
           <h1>
@@ -6270,9 +5817,7 @@ function ClansPage({
 
         <button
           className="primary"
-          onClick={
-            load
-          }
+          onClick={load}
           disabled={busy}
         >
           <RefreshCw size={17} />
@@ -6315,15 +5860,13 @@ function ClansPage({
             Clan Name
 
             <input
-              value={
-                name
+              value={name}
+              onChange={e =>
+                setName(
+                  e.target.value
+                )
               }
-              onChange={
-                e =>
-                  setName(
-                    e.target.value
-                  )
-              }
+              placeholder="Example: Neon Reapers"
               required
             />
           </label>
@@ -6332,15 +5875,13 @@ function ClansPage({
             Description
 
             <input
-              value={
-                description
+              value={description}
+              onChange={e =>
+                setDescription(
+                  e.target.value
+                )
               }
-              onChange={
-                e =>
-                  setDescription(
-                    e.target.value
-                  )
-              }
+              placeholder="Tell players about your clan"
             />
           </label>
 
@@ -6348,33 +5889,25 @@ function ClansPage({
             Primary Game
 
             <select
-              value={
-                gameId
+              value={gameId}
+              onChange={e =>
+                setGameId(
+                  e.target.value
+                )
               }
-              onChange={
-                e =>
-                  setGameId(
-                    e.target.value
-                  )
-              }
+              required
             >
 
-              {games.map(
-                game => (
+              {games.map(game => (
 
-                  <option
-                    key={
-                      game.id
-                    }
-                    value={
-                      game.id
-                    }
-                  >
-                    {game.name}
-                  </option>
+                <option
+                  key={game.id}
+                  value={game.id}
+                >
+                  {game.name}
+                </option>
 
-                )
-              )}
+              ))}
 
             </select>
 
@@ -6384,14 +5917,11 @@ function ClansPage({
             Maximum Members
 
             <select
-              value={
-                maxMembers
-              }
-              onChange={
-                e =>
-                  setMaxMembers(
-                    e.target.value
-                  )
+              value={maxMembers}
+              onChange={e =>
+                setMaxMembers(
+                  e.target.value
+                )
               }
             >
 
@@ -6424,12 +5954,11 @@ function ClansPage({
                   ? 'public'
                   : 'private'
               }
-              onChange={
-                e =>
-                  setIsPublic(
-                    e.target.value ===
-                    'public'
-                  )
+              onChange={e =>
+                setIsPublic(
+                  e.target.value ===
+                  'public'
+                )
               }
             >
 
@@ -6485,14 +6014,25 @@ function ClansPage({
 
       ) : (
 
-        clans.map(
-          row => (
+        clans.map(row => {
 
+          const joined =
+            isMember(
+              row.id
+            );
+
+          const full =
+            number(
+              row.member_count
+            ) >=
+            number(
+              row.max_members
+            );
+
+          return (
             <section
               className="panel"
-              key={
-                row.id
-              }
+              key={row.id}
               style={{
                 marginBottom:
                   '16px'
@@ -6529,22 +6069,120 @@ function ClansPage({
 
               </div>
 
-              <button
-                className="primary"
-                onClick={() =>
-                  openClan(
-                    row
-                  )
-                }
+              {row.description && (
+                <p>
+                  {row.description}
+                </p>
+              )}
+
+              <div
+                className="friend"
+                style={{
+                  marginTop:
+                    '12px'
+                }}
               >
-                View Clan
-                <ChevronRight size={16} />
-              </button>
+
+                <div className="avatar">
+                  <Users size={18} />
+                </div>
+
+                <div
+                  style={{
+                    flex: 1
+                  }}
+                >
+
+                  <b>
+                    {formatNumber(
+                      row.member_count
+                    )} / {formatNumber(
+                      row.max_members
+                    )} Members
+                  </b>
+
+                  <small>
+                    {full
+                      ? 'Clan full'
+                      : `${Math.max(
+                          0,
+                          number(
+                            row.max_members
+                          ) -
+                          number(
+                            row.member_count
+                          )
+                        )} spots remaining`}
+                  </small>
+
+                </div>
+
+                {joined &&
+                  row.owner_id !==
+                    user.id && (
+                  <span className="pill">
+                    MEMBER
+                  </span>
+                )}
+
+                {row.owner_id ===
+                  user.id && (
+                  <span className="pill">
+                    OWNER
+                  </span>
+                )}
+
+              </div>
+
+              <div
+                style={{
+                  display:
+                    'flex',
+
+                  gap:
+                    '10px',
+
+                  flexWrap:
+                    'wrap',
+
+                  marginTop:
+                    '14px'
+                }}
+              >
+
+                <button
+                  className="primary"
+                  onClick={() =>
+                    openClan(row)
+                  }
+                  disabled={busy}
+                >
+                  View Clan
+                  <ChevronRight size={16} />
+                </button>
+
+                {!joined &&
+                  row.is_public &&
+                  !full && (
+
+                  <button
+                    className="linkbtn"
+                    onClick={() =>
+                      join(row)
+                    }
+                    disabled={busy}
+                  >
+                    <UserPlus size={16} />
+                    Join
+                  </button>
+
+                )}
+
+              </div>
 
             </section>
-
-          )
-        )
+          );
+        })
 
       )}
 
@@ -6626,9 +6264,7 @@ function ActivityFeedPage({
   ] = useState('');
 
   useEffect(() => {
-    if (
-      !selectedFile
-    ) {
+    if (!selectedFile) {
       setPreviewUrl('');
       return;
     }
@@ -6712,9 +6348,7 @@ function ActivityFeedPage({
     );
   }
 
-  function chooseMedia(
-    e
-  ) {
+  function chooseMedia(e) {
     const file =
       e.target.files?.[0];
 
@@ -6755,9 +6389,7 @@ function ActivityFeedPage({
     );
   }
 
-  async function submitPost(
-    e
-  ) {
+  async function submitPost(e) {
     e.preventDefault();
 
     setBusy(true);
@@ -6776,12 +6408,8 @@ function ActivityFeedPage({
         );
       }
 
-      if (
-        selectedFile
-      ) {
-        setUploading(
-          true
-        );
+      if (selectedFile) {
+        setUploading(true);
 
         uploadedMedia =
           await uploadActivityMedia({
@@ -6847,17 +6475,12 @@ function ActivityFeedPage({
       );
 
     } finally {
-      setUploading(
-        false
-      );
-
+      setUploading(false);
       setBusy(false);
     }
   }
 
-  async function removePost(
-    row
-  ) {
+  async function removePost(row) {
     const confirmed =
       window.confirm(
         'Delete this post?'
@@ -6887,8 +6510,7 @@ function ActivityFeedPage({
               user.id
           });
         } catch {
-          // Post is already deleted.
-          // Media cleanup can be retried later.
+          // Best-effort media cleanup.
         }
       }
 
@@ -6967,9 +6589,7 @@ function ActivityFeedPage({
     }
   }
 
-  async function toggleComments(
-    row
-  ) {
+  async function toggleComments(row) {
     if (
       expandedPostId ===
       row.id
@@ -7181,9 +6801,7 @@ function ActivityFeedPage({
 
         <button
           className="primary"
-          onClick={
-            load
-          }
+          onClick={load}
           disabled={busy}
         >
           <RefreshCw size={17} />
@@ -7226,14 +6844,11 @@ function ActivityFeedPage({
             Post
 
             <textarea
-              value={
-                newPost
-              }
-              onChange={
-                e =>
-                  setNewPost(
-                    e.target.value
-                  )
+              value={newPost}
+              onChange={e =>
+                setNewPost(
+                  e.target.value
+                )
               }
               placeholder="What happened in your game?"
               maxLength={1000}
@@ -7435,434 +7050,407 @@ function ActivityFeedPage({
 
       ) : (
 
-        posts.map(
-          row => {
+        posts.map(row => {
 
-            const playerName =
-              row.display_name ||
-              row.username ||
-              'Player';
+          const playerName =
+            row.display_name ||
+            row.username ||
+            'Player';
 
-            const comments =
-              commentsByPost[
-                row.id
-              ] || [];
+          const comments =
+            commentsByPost[
+              row.id
+            ] || [];
 
-            const openComments =
-              expandedPostId ===
-              row.id;
+          const openComments =
+            expandedPostId ===
+            row.id;
 
-            const mediaKind =
-              activityMediaKind(
-                row.media_type
-              );
+          const mediaKind =
+            activityMediaKind(
+              row.media_type
+            );
 
-            return (
-              <section
-                className="panel"
-                key={
-                  row.id
-                }
+          return (
+            <section
+              className="panel"
+              key={row.id}
+              style={{
+                marginBottom:
+                  '16px'
+              }}
+            >
+
+              <div className="friend">
+
+                <div className="avatar">
+                  {playerName
+                    .charAt(0)
+                    .toUpperCase()}
+                </div>
+
+                <div
+                  style={{
+                    flex: 1
+                  }}
+                >
+
+                  <b>
+                    {playerName}
+                  </b>
+
+                  <small>
+                    @{row.username ||
+                      'player'}
+
+                    {row.title
+                      ? ` • ${row.title}`
+                      : ''}
+
+                    {' • '}
+
+                    {formatDateTime(
+                      row.created_at
+                    )}
+                  </small>
+
+                </div>
+
+                {row.user_id ===
+                  user.id && (
+
+                  <button
+                    className="logout"
+                    onClick={() =>
+                      removePost(row)
+                    }
+                    disabled={busy}
+                  >
+                    Delete
+                  </button>
+
+                )}
+
+              </div>
+
+              {row.body && (
+
+                <p
+                  style={{
+                    whiteSpace:
+                      'pre-wrap',
+
+                    fontSize:
+                      '16px',
+
+                    lineHeight:
+                      1.6
+                  }}
+                >
+                  {row.body}
+                </p>
+
+              )}
+
+              {row.media_url &&
+                mediaKind ===
+                  'image' && (
+
+                <div
+                  style={{
+                    marginTop:
+                      '14px'
+                  }}
+                >
+
+                  <img
+                    src={
+                      row.media_url
+                    }
+                    alt="FragRank post"
+                    loading="lazy"
+                    style={{
+                      display:
+                        'block',
+
+                      width:
+                        '100%',
+
+                      maxHeight:
+                        '650px',
+
+                      objectFit:
+                        'contain',
+
+                      borderRadius:
+                        '14px',
+
+                      background:
+                        'rgba(0,0,0,0.25)'
+                    }}
+                  />
+
+                </div>
+
+              )}
+
+              {row.media_url &&
+                mediaKind ===
+                  'video' && (
+
+                <div
+                  style={{
+                    marginTop:
+                      '14px'
+                  }}
+                >
+
+                  <video
+                    src={
+                      row.media_url
+                    }
+                    controls
+                    playsInline
+                    preload="metadata"
+                    style={{
+                      display:
+                        'block',
+
+                      width:
+                        '100%',
+
+                      maxHeight:
+                        '650px',
+
+                      borderRadius:
+                        '14px',
+
+                      background:
+                        '#000'
+                    }}
+                  />
+
+                </div>
+
+              )}
+
+              <div
                 style={{
-                  marginBottom:
+                  display:
+                    'flex',
+
+                  flexWrap:
+                    'wrap',
+
+                  gap:
+                    '10px',
+
+                  marginTop:
                     '16px'
                 }}
               >
 
-                <div className="friend">
+                {reactionButton(
+                  row,
+                  'like',
+                  '👍',
+                  'Like',
+                  row.like_count
+                )}
 
-                  <div className="avatar">
-                    {playerName
-                      .charAt(0)
-                      .toUpperCase()}
-                  </div>
+                {reactionButton(
+                  row,
+                  'fire',
+                  '🔥',
+                  'Fire',
+                  row.fire_count
+                )}
 
-                  <div
-                    style={{
-                      flex:
-                        1
-                    }}
-                  >
+                {reactionButton(
+                  row,
+                  'trophy',
+                  '🏆',
+                  'Trophy',
+                  row.trophy_count
+                )}
 
-                    <b>
-                      {playerName}
-                    </b>
-
-                    <small>
-                      @{row.username ||
-                        'player'}
-
-                      {row.title
-                        ? ` • ${row.title}`
-                        : ''}
-
-                      {' • '}
-
-                      {formatDateTime(
-                        row.created_at
-                      )}
-                    </small>
-
-                  </div>
-
-                  {row.user_id ===
-                    user.id && (
-
-                    <button
-                      className="logout"
-                      onClick={() =>
-                        removePost(
-                          row
-                        )
-                      }
-                      disabled={busy}
-                    >
-                      Delete
-                    </button>
-
+                <button
+                  className="linkbtn"
+                  onClick={() =>
+                    toggleComments(
+                      row
+                    )
+                  }
+                  disabled={busy}
+                >
+                  💬 Comments{' '}
+                  {formatNumber(
+                    row.comment_count
                   )}
+                </button>
 
-                </div>
+              </div>
 
-                {row.body && (
-
-                  <p
-                    style={{
-                      whiteSpace:
-                        'pre-wrap',
-
-                      fontSize:
-                        '16px',
-
-                      lineHeight:
-                        1.6
-                    }}
-                  >
-                    {row.body}
-                  </p>
-
-                )}
-
-                {row.media_url &&
-                  mediaKind ===
-                    'image' && (
-
-                  <div
-                    style={{
-                      marginTop:
-                        '14px'
-                    }}
-                  >
-
-                    <img
-                      src={
-                        row.media_url
-                      }
-                      alt="FragRank post"
-                      loading="lazy"
-                      style={{
-                        display:
-                          'block',
-
-                        width:
-                          '100%',
-
-                        maxHeight:
-                          '650px',
-
-                        objectFit:
-                          'contain',
-
-                        borderRadius:
-                          '14px',
-
-                        background:
-                          'rgba(0,0,0,0.25)'
-                      }}
-                    />
-
-                  </div>
-
-                )}
-
-                {row.media_url &&
-                  mediaKind ===
-                    'video' && (
-
-                  <div
-                    style={{
-                      marginTop:
-                        '14px'
-                    }}
-                  >
-
-                    <video
-                      src={
-                        row.media_url
-                      }
-                      controls
-                      playsInline
-                      preload="metadata"
-                      style={{
-                        display:
-                          'block',
-
-                        width:
-                          '100%',
-
-                        maxHeight:
-                          '650px',
-
-                        borderRadius:
-                          '14px',
-
-                        background:
-                          '#000'
-                      }}
-                    />
-
-                  </div>
-
-                )}
-
-                {row.media_url &&
-                  !mediaKind && (
-
-                  <div
-                    className="notice"
-                    style={{
-                      marginTop:
-                        '14px'
-                    }}
-                  >
-                    This post contains media that your browser cannot preview.
-                  </div>
-
-                )}
+              {openComments && (
 
                 <div
                   style={{
-                    display:
-                      'flex',
-
-                    flexWrap:
-                      'wrap',
-
-                    gap:
-                      '10px',
-
                     marginTop:
-                      '16px'
+                      '18px'
                   }}
                 >
 
-                  {reactionButton(
-                    row,
-                    'like',
-                    '👍',
-                    'Like',
-                    row.like_count
-                  )}
+                  <div className="panel-head">
 
-                  {reactionButton(
-                    row,
-                    'fire',
-                    '🔥',
-                    'Fire',
-                    row.fire_count
-                  )}
+                    <div>
 
-                  {reactionButton(
-                    row,
-                    'trophy',
-                    '🏆',
-                    'Trophy',
-                    row.trophy_count
-                  )}
+                      <h3>
+                        Comments
+                      </h3>
 
-                  <button
-                    className="linkbtn"
-                    onClick={() =>
-                      toggleComments(
-                        row
-                      )
-                    }
-                    disabled={busy}
-                  >
-                    💬 Comments{' '}
-                    {formatNumber(
-                      row.comment_count
-                    )}
-                  </button>
-
-                </div>
-
-                {openComments && (
-
-                  <div
-                    style={{
-                      marginTop:
-                        '18px'
-                    }}
-                  >
-
-                    <div className="panel-head">
-
-                      <div>
-
-                        <h3>
-                          Comments
-                        </h3>
-
-                        <span>
-                          {comments.length} comments
-                        </span>
-
-                      </div>
+                      <span>
+                        {comments.length} comments
+                      </span>
 
                     </div>
 
-                    {comments.length ===
-                      0 && (
-
-                      <p className="muted">
-                        No comments yet.
-                      </p>
-
-                    )}
-
-                    {comments.map(
-                      comment => {
-
-                        const commentName =
-                          comment.display_name ||
-                          comment.username ||
-                          'Player';
-
-                        return (
-                          <div
-                            className="friend"
-                            key={
-                              comment.id
-                            }
-                          >
-
-                            <div className="avatar">
-                              {commentName
-                                .charAt(0)
-                                .toUpperCase()}
-                            </div>
-
-                            <div
-                              style={{
-                                flex:
-                                  1
-                              }}
-                            >
-
-                              <b>
-                                {commentName}
-                              </b>
-
-                              <small>
-                                @{comment.username ||
-                                  'player'} •{' '}
-                                {formatDateTime(
-                                  comment.created_at
-                                )}
-                              </small>
-
-                              <p
-                                style={{
-                                  marginBottom:
-                                    0
-                                }}
-                              >
-                                {comment.body}
-                              </p>
-
-                            </div>
-
-                            {comment.user_id ===
-                              user.id && (
-
-                              <button
-                                className="iconbtn"
-                                onClick={() =>
-                                  removeComment(
-                                    row.id,
-                                    comment
-                                  )
-                                }
-                                disabled={busy}
-                              >
-                                <X size={16} />
-                              </button>
-
-                            )}
-
-                          </div>
-                        );
-                      }
-                    )}
-
-                    <form
-                      onSubmit={
-                        e =>
-                          submitComment(
-                            e,
-                            row.id
-                          )
-                      }
-                      style={{
-                        marginTop:
-                          '14px'
-                      }}
-                    >
-
-                      <label>
-                        Add Comment
-
-                        <input
-                          value={
-                            commentDrafts[
-                              row.id
-                            ] || ''
-                          }
-                          onChange={
-                            e =>
-                              setCommentDrafts(
-                                previous => ({
-                                  ...previous,
-
-                                  [row.id]:
-                                    e.target.value
-                                })
-                              )
-                          }
-                          placeholder="Write a comment..."
-                          maxLength={500}
-                          required
-                        />
-                      </label>
-
-                      <button
-                        className="primary"
-                        disabled={busy}
-                      >
-                        Comment
-                      </button>
-
-                    </form>
-
                   </div>
 
-                )}
+                  {comments.length === 0 && (
 
-              </section>
-            );
-          }
-        )
+                    <p className="muted">
+                      No comments yet.
+                    </p>
+
+                  )}
+
+                  {comments.map(comment => {
+
+                    const commentName =
+                      comment.display_name ||
+                      comment.username ||
+                      'Player';
+
+                    return (
+                      <div
+                        className="friend"
+                        key={
+                          comment.id
+                        }
+                      >
+
+                        <div className="avatar">
+                          {commentName
+                            .charAt(0)
+                            .toUpperCase()}
+                        </div>
+
+                        <div
+                          style={{
+                            flex:
+                              1
+                          }}
+                        >
+
+                          <b>
+                            {commentName}
+                          </b>
+
+                          <small>
+                            @{comment.username ||
+                              'player'} •{' '}
+                            {formatDateTime(
+                              comment.created_at
+                            )}
+                          </small>
+
+                          <p
+                            style={{
+                              marginBottom:
+                                0
+                            }}
+                          >
+                            {comment.body}
+                          </p>
+
+                        </div>
+
+                        {comment.user_id ===
+                          user.id && (
+
+                          <button
+                            className="iconbtn"
+                            onClick={() =>
+                              removeComment(
+                                row.id,
+                                comment
+                              )
+                            }
+                            disabled={busy}
+                          >
+                            <X size={16} />
+                          </button>
+
+                        )}
+
+                      </div>
+                    );
+                  })}
+
+                  <form
+                    onSubmit={e =>
+                      submitComment(
+                        e,
+                        row.id
+                      )
+                    }
+                    style={{
+                      marginTop:
+                        '14px'
+                    }}
+                  >
+
+                    <label>
+                      Add Comment
+
+                      <input
+                        value={
+                          commentDrafts[
+                            row.id
+                          ] || ''
+                        }
+                        onChange={e =>
+                          setCommentDrafts(
+                            previous => ({
+                              ...previous,
+
+                              [row.id]:
+                                e.target.value
+                            })
+                          )
+                        }
+                        placeholder="Write a comment..."
+                        maxLength={500}
+                        required
+                      />
+                    </label>
+
+                    <button
+                      className="primary"
+                      disabled={busy}
+                    >
+                      Comment
+                    </button>
+
+                  </form>
+
+                </div>
+
+              )}
+
+            </section>
+          );
+        })
 
       )}
 
@@ -7950,9 +7538,7 @@ function FriendsPage({
     loadFriends();
   }, [user.id]);
 
-  async function runSearch(
-    e
-  ) {
+  async function runSearch(e) {
     e.preventDefault();
 
     setMessage('');
@@ -7976,9 +7562,7 @@ function FriendsPage({
     }
   }
 
-  async function addFriend(
-    profile
-  ) {
+  async function addFriend(profile) {
     try {
       await sendFriendRequest(
         user.id,
@@ -8068,11 +7652,8 @@ function FriendsPage({
             runSearch
           }
           style={{
-            display:
-              'flex',
-
-            gap:
-              '10px'
+            display: 'flex',
+            gap: '10px'
           }}
         >
 
@@ -8080,16 +7661,14 @@ function FriendsPage({
             value={
               searchText
             }
-            onChange={
-              e =>
-                setSearchText(
-                  e.target.value
-                )
+            onChange={e =>
+              setSearchText(
+                e.target.value
+              )
             }
             placeholder="Search players..."
             style={{
-              flex:
-                1
+              flex: 1
             }}
           />
 
@@ -8112,53 +7691,51 @@ function FriendsPage({
           </div>
         )}
 
-        {searchResults.map(
-          profile => (
+        {searchResults.map(profile => (
 
-            <div
-              className="friend"
-              key={
-                profile.id
-              }
-            >
+          <div
+            className="friend"
+            key={
+              profile.id
+            }
+          >
 
-              <div className="avatar">
-                {(
-                  profile.display_name ||
-                  profile.username ||
-                  'P'
-                )[0].toUpperCase()}
-              </div>
+            <div className="avatar">
+              {(
+                profile.display_name ||
+                profile.username ||
+                'P'
+              )[0].toUpperCase()}
+            </div>
 
-              <div>
+            <div>
 
-                <b>
-                  {profile.display_name ||
-                    profile.username}
-                </b>
+              <b>
+                {profile.display_name ||
+                  profile.username}
+              </b>
 
-                <small>
-                  @{profile.username}
-                </small>
-
-              </div>
-
-              <button
-                className="primary"
-                onClick={() =>
-                  addFriend(
-                    profile
-                  )
-                }
-              >
-                <UserPlus size={16} />
-                Add
-              </button>
+              <small>
+                @{profile.username}
+              </small>
 
             </div>
 
-          )
-        )}
+            <button
+              className="primary"
+              onClick={() =>
+                addFriend(
+                  profile
+                )
+              }
+            >
+              <UserPlus size={16} />
+              Add
+            </button>
+
+          </div>
+
+        ))}
 
       </section>
 
@@ -8178,69 +7755,67 @@ function FriendsPage({
 
           </div>
 
-          {incoming.map(
-            item => {
+          {incoming.map(item => {
 
-              const friendProfile =
-                item.profile;
+            const friendProfile =
+              item.profile;
 
-              return (
-                <div
-                  className="friend"
-                  key={
-                    item.friendshipId
-                  }
-                >
+            return (
+              <div
+                className="friend"
+                key={
+                  item.friendshipId
+                }
+              >
 
-                  <div className="avatar">
-                    {(
-                      friendProfile.display_name ||
-                      friendProfile.username
-                    )[0].toUpperCase()}
-                  </div>
+                <div className="avatar">
+                  {(
+                    friendProfile.display_name ||
+                    friendProfile.username
+                  )[0].toUpperCase()}
+                </div>
 
-                  <div>
+                <div>
 
-                    <b>
-                      {friendProfile.display_name ||
-                        friendProfile.username}
-                    </b>
+                  <b>
+                    {friendProfile.display_name ||
+                      friendProfile.username}
+                  </b>
 
-                    <small>
-                      @{friendProfile.username}
-                    </small>
-
-                  </div>
-
-                  <button
-                    className="primary"
-                    onClick={() =>
-                      respond(
-                        item.friendshipId,
-                        'accepted'
-                      )
-                    }
-                  >
-                    <Check size={16} />
-                    Accept
-                  </button>
-
-                  <button
-                    className="iconbtn"
-                    onClick={() =>
-                      respond(
-                        item.friendshipId,
-                        'rejected'
-                      )
-                    }
-                  >
-                    <X size={16} />
-                  </button>
+                  <small>
+                    @{friendProfile.username}
+                  </small>
 
                 </div>
-              );
-            }
-          )}
+
+                <button
+                  className="primary"
+                  onClick={() =>
+                    respond(
+                      item.friendshipId,
+                      'accepted'
+                    )
+                  }
+                >
+                  <Check size={16} />
+                  Accept
+                </button>
+
+                <button
+                  className="iconbtn"
+                  onClick={() =>
+                    respond(
+                      item.friendshipId,
+                      'rejected'
+                    )
+                  }
+                >
+                  <X size={16} />
+                </button>
+
+              </div>
+            );
+          })}
 
         </section>
 
@@ -8274,68 +7849,59 @@ function FriendsPage({
 
         ) : (
 
-          friends.map(
-            item => {
+          friends.map(item => {
 
-              const friendProfile =
-                item.profile;
+            const friendProfile =
+              item.profile;
 
-              return (
-                <button
-                  key={
+            return (
+              <button
+                key={
+                  item.friendshipId
+                }
+                style={{
+                  all: 'unset',
+                  display: 'block',
+                  width: '100%',
+                  cursor: 'pointer'
+                }}
+                onClick={() =>
+                  openFriend(
+                    friendProfile,
                     item.friendshipId
-                  }
-                  style={{
-                    all:
-                      'unset',
+                  )
+                }
+              >
 
-                    display:
-                      'block',
+                <div className="friend">
 
-                    width:
-                      '100%',
+                  <div className="avatar">
+                    {(
+                      friendProfile.display_name ||
+                      friendProfile.username
+                    )[0].toUpperCase()}
+                  </div>
 
-                    cursor:
-                      'pointer'
-                  }}
-                  onClick={() =>
-                    openFriend(
-                      friendProfile,
-                      item.friendshipId
-                    )
-                  }
-                >
+                  <div>
 
-                  <div className="friend">
+                    <b>
+                      {friendProfile.display_name ||
+                        friendProfile.username}
+                    </b>
 
-                    <div className="avatar">
-                      {(
-                        friendProfile.display_name ||
-                        friendProfile.username
-                      )[0].toUpperCase()}
-                    </div>
-
-                    <div>
-
-                      <b>
-                        {friendProfile.display_name ||
-                          friendProfile.username}
-                      </b>
-
-                      <small>
-                        @{friendProfile.username}
-                      </small>
-
-                    </div>
-
-                    <ChevronRight size={18} />
+                    <small>
+                      @{friendProfile.username}
+                    </small>
 
                   </div>
 
-                </button>
-              );
-            }
-          )
+                  <ChevronRight size={18} />
+
+                </div>
+
+              </button>
+            );
+          })
 
         )}
 
@@ -8351,40 +7917,38 @@ function FriendsPage({
             </h2>
           </div>
 
-          {outgoing.map(
-            item => (
+          {outgoing.map(item => (
 
-              <div
-                className="friend"
-                key={
-                  item.friendshipId
-                }
-              >
+            <div
+              className="friend"
+              key={
+                item.friendshipId
+              }
+            >
 
-                <div className="avatar">
-                  {(
-                    item.profile.display_name ||
-                    item.profile.username
-                  )[0].toUpperCase()}
-                </div>
+              <div className="avatar">
+                {(
+                  item.profile.display_name ||
+                  item.profile.username
+                )[0].toUpperCase()}
+              </div>
 
-                <div>
+              <div>
 
-                  <b>
-                    {item.profile.display_name ||
-                      item.profile.username}
-                  </b>
+                <b>
+                  {item.profile.display_name ||
+                    item.profile.username}
+                </b>
 
-                  <small>
-                    Pending
-                  </small>
-
-                </div>
+                <small>
+                  Pending
+                </small>
 
               </div>
 
-            )
-          )}
+            </div>
+
+          ))}
 
         </section>
 
@@ -8602,55 +8166,53 @@ function FriendProfile({
 
           <div className="gamegrid">
 
-            {gameStats.map(
-              game => (
+            {gameStats.map(game => (
 
-                <div
-                  className="gamecard"
-                  key={
-                    game.id
-                  }
-                >
+              <div
+                className="gamecard"
+                key={
+                  game.id
+                }
+              >
 
-                  <div className="glogo">
-                    {game.short}
-                  </div>
+                <div className="glogo">
+                  {game.short}
+                </div>
 
-                  <div>
+                <div>
 
-                    <b>
-                      {game.name}
-                    </b>
+                  <b>
+                    {game.name}
+                  </b>
 
-                    <small>
-                      {formatNumber(
-                        game.games
-                      )} games •{' '}
-                      {formatNumber(
-                        game.wins
-                      )} wins
-                    </small>
-
-                  </div>
-
-                  <div className="kpg">
-
-                    <b>
-                      {formatDecimal(
-                        game.kpg
-                      )}
-                    </b>
-
-                    <small>
-                      KPG
-                    </small>
-
-                  </div>
+                  <small>
+                    {formatNumber(
+                      game.games
+                    )} games •{' '}
+                    {formatNumber(
+                      game.wins
+                    )} wins
+                  </small>
 
                 </div>
 
-              )
-            )}
+                <div className="kpg">
+
+                  <b>
+                    {formatDecimal(
+                      game.kpg
+                    )}
+                  </b>
+
+                  <small>
+                    KPG
+                  </small>
+
+                </div>
+
+              </div>
+
+            ))}
 
           </div>
 
@@ -8662,8 +8224,7 @@ function FriendProfile({
         className="logout"
         onClick={remove}
         style={{
-          marginTop:
-            '20px'
+          marginTop: '20px'
         }}
       >
         Remove Friend
@@ -8726,9 +8287,7 @@ function ProfileSettings({
 
   }, [profile]);
 
-  async function saveProfile(
-    e
-  ) {
+  async function saveProfile(e) {
     e.preventDefault();
 
     setSaving(true);
@@ -8817,11 +8376,10 @@ function ProfileSettings({
               value={
                 displayName
               }
-              onChange={
-                e =>
-                  setDisplayName(
-                    e.target.value
-                  )
+              onChange={e =>
+                setDisplayName(
+                  e.target.value
+                )
               }
             />
           </label>
@@ -8830,14 +8388,11 @@ function ProfileSettings({
             Player Title
 
             <input
-              value={
-                title
-              }
-              onChange={
-                e =>
-                  setTitle(
-                    e.target.value
-                  )
+              value={title}
+              onChange={e =>
+                setTitle(
+                  e.target.value
+                )
               }
               placeholder="Example: FragRank Founder"
             />
@@ -8847,14 +8402,11 @@ function ProfileSettings({
             Bio
 
             <input
-              value={
-                bio
-              }
-              onChange={
-                e =>
-                  setBio(
-                    e.target.value
-                  )
+              value={bio}
+              onChange={e =>
+                setBio(
+                  e.target.value
+                )
               }
             />
           </label>
@@ -8886,7 +8438,7 @@ function ProfileSettings({
 
 
 /* =========================================================
-   APP
+   MAIN APP
 ========================================================= */
 
 function App() {
@@ -8923,9 +8475,7 @@ function App() {
   const [
     page,
     setPage
-  ] = useState(
-    'dashboard'
-  );
+  ] = useState('dashboard');
 
   const [
     selectedGame,
@@ -8947,15 +8497,10 @@ function App() {
     setOpen
   ] = useState(false);
 
-  async function loadPlayerData(
-    user
-  ) {
+  async function loadPlayerData(user) {
     if (!user) return;
 
-    setStatsLoading(
-      true
-    );
-
+    setStatsLoading(true);
     setStatsError('');
 
     try {
@@ -8984,15 +8529,12 @@ function App() {
       );
 
     } finally {
-      setStatsLoading(
-        false
-      );
+      setStatsLoading(false);
     }
   }
 
   useEffect(() => {
-    let alive =
-      true;
+    let alive = true;
 
     async function start() {
       try {
@@ -9002,8 +8544,7 @@ function App() {
               currentSession
           }
         } =
-          await supabase
-            .auth
+          await supabase.auth
             .getSession();
 
         if (!alive) {
@@ -9025,9 +8566,7 @@ function App() {
 
       } finally {
         if (alive) {
-          setLoading(
-            false
-          );
+          setLoading(false);
         }
       }
     }
@@ -9068,17 +8607,14 @@ function App() {
                 null
               );
 
-              setGameStats(
-                []
-              );
+              setGameStats([]);
             }
 
           }
         );
 
     return () => {
-      alive =
-        false;
+      alive = false;
 
       subscription
         .unsubscribe();
@@ -9114,9 +8650,7 @@ function App() {
     profile?.username ||
     'Player';
 
-  function openGame(
-    game
-  ) {
+  function openGame(game) {
     setSelectedGame(
       game
     );
@@ -9126,11 +8660,8 @@ function App() {
     );
 
     window.scrollTo({
-      top:
-        0,
-
-      behavior:
-        'smooth'
+      top: 0,
+      behavior: 'smooth'
     });
   }
 
@@ -9151,11 +8682,8 @@ function App() {
     );
 
     window.scrollTo({
-      top:
-        0,
-
-      behavior:
-        'smooth'
+      top: 0,
+      behavior: 'smooth'
     });
   }
 
@@ -9411,9 +8939,7 @@ function App() {
           <button
             className="iconbtn close"
             onClick={() =>
-              setOpen(
-                false
-              )
+              setOpen(false)
             }
           >
             <X />
@@ -9437,9 +8963,7 @@ function App() {
             ) => (
 
               <button
-                key={
-                  id
-                }
+                key={id}
                 className={
                   page === id
                     ? 'active'
@@ -9447,9 +8971,7 @@ function App() {
                 }
                 onClick={() => {
 
-                  setPage(
-                    id
-                  );
+                  setPage(id);
 
                   setSelectedGame(
                     null
@@ -9459,15 +8981,11 @@ function App() {
                     null
                   );
 
-                  setOpen(
-                    false
-                  );
+                  setOpen(false);
                 }}
               >
 
-                <Icon
-                  size={18}
-                />
+                <Icon size={18} />
 
                 {label}
 
@@ -9523,9 +9041,7 @@ function App() {
           <button
             className="iconbtn menu"
             onClick={() =>
-              setOpen(
-                true
-              )
+              setOpen(true)
             }
           >
             <Menu />
