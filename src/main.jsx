@@ -324,7 +324,10 @@ async function searchPlayers(text, currentUserId) {
   return data || [];
 }
 
-async function sendFriendRequest(currentUserId, otherUserId) {
+async function sendFriendRequest(
+  currentUserId,
+  otherUserId
+) {
   const {
     data: existing,
     error: existingError
@@ -457,10 +460,15 @@ async function getFriendships(userId) {
   };
 }
 
-async function respondToFriendRequest(friendshipId, status) {
+async function respondToFriendRequest(
+  friendshipId,
+  status
+) {
   const { error } = await supabase
     .from('friendships')
-    .update({ status })
+    .update({
+      status
+    })
     .eq('id', friendshipId);
 
   if (error) throw error;
@@ -477,7 +485,7 @@ async function removeFriend(friendshipId) {
 
 
 /* =========================================================
-   LEADERBOARDS
+   LEADERBOARD
 ========================================================= */
 
 async function loadOverallLeaderboard() {
@@ -543,7 +551,10 @@ const achievementRules = {
   }
 };
 
-async function syncAchievements(userId, totals) {
+async function syncAchievements(
+  userId,
+  totals
+) {
   const {
     data: achievements,
     error: achievementsError
@@ -552,7 +563,9 @@ async function syncAchievements(userId, totals) {
     .select('*')
     .order('points');
 
-  if (achievementsError) throw achievementsError;
+  if (achievementsError) {
+    throw achievementsError;
+  }
 
   const {
     data: currentRows,
@@ -562,7 +575,9 @@ async function syncAchievements(userId, totals) {
     .select('*')
     .eq('user_id', userId);
 
-  if (currentError) throw currentError;
+  if (currentError) {
+    throw currentError;
+  }
 
   const currentMap = {};
 
@@ -623,15 +638,20 @@ async function syncAchievements(userId, totals) {
         }
       );
 
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
   }
 }
 
-async function getUserAchievements(userId) {
+async function getUserAchievements(
+  userId
+) {
   const [
     achievementsResult,
     progressResult
   ] = await Promise.all([
+
     supabase
       .from('achievements')
       .select('*')
@@ -641,6 +661,7 @@ async function getUserAchievements(userId) {
       .from('user_achievements')
       .select('*')
       .eq('user_id', userId)
+
   ]);
 
   if (achievementsResult.error) {
@@ -653,8 +674,13 @@ async function getUserAchievements(userId) {
 
   const progressMap = {};
 
-  for (const row of progressResult.data || []) {
-    progressMap[row.achievement_id] = row;
+  for (
+    const row
+    of progressResult.data || []
+  ) {
+    progressMap[
+      row.achievement_id
+    ] = row;
   }
 
   return (
@@ -703,7 +729,10 @@ function challengeMetricLabel(metric) {
   );
 }
 
-function statValueForMetric(stat, metric) {
+function statValueForMetric(
+  stat,
+  metric
+) {
   if (!stat) return 0;
 
   if (metric === 'kills') {
@@ -781,7 +810,9 @@ async function createChallenge({
   if (error) throw error;
 }
 
-async function acceptChallenge(challenge) {
+async function acceptChallenge(
+  challenge
+) {
   const [
     creatorStat,
     opponentStat
@@ -827,7 +858,9 @@ async function acceptChallenge(challenge) {
   if (error) throw error;
 }
 
-async function declineChallenge(challengeId) {
+async function declineChallenge(
+  challengeId
+) {
   const { error } = await supabase
     .from('challenges')
     .update({
@@ -838,7 +871,9 @@ async function declineChallenge(challengeId) {
   if (error) throw error;
 }
 
-async function cancelChallenge(challengeId) {
+async function cancelChallenge(
+  challengeId
+) {
   const { error } = await supabase
     .from('challenges')
     .delete()
@@ -847,8 +882,13 @@ async function cancelChallenge(challengeId) {
   if (error) throw error;
 }
 
-async function refreshChallenge(challenge) {
-  if (challenge.status !== 'active') {
+async function refreshChallenge(
+  challenge
+) {
+  if (
+    challenge.status !==
+    'active'
+  ) {
     return;
   }
 
@@ -898,7 +938,9 @@ async function refreshChallenge(challenge) {
     );
 
   const target =
-    number(challenge.target);
+    number(
+      challenge.target
+    );
 
   let winnerId = null;
 
@@ -969,7 +1011,9 @@ async function getTournamentDetails() {
   return data || [];
 }
 
-async function getMyTournamentMemberships(userId) {
+async function getMyTournamentMemberships(
+  userId
+) {
   const { data, error } = await supabase
     .from('tournament_players')
     .select(`
@@ -984,7 +1028,9 @@ async function getMyTournamentMemberships(userId) {
   return data || [];
 }
 
-async function getTournamentPlayers(tournamentId) {
+async function getTournamentPlayers(
+  tournamentId
+) {
   const {
     data: rows,
     error
@@ -1030,13 +1076,17 @@ async function getTournamentPlayers(tournamentId) {
   const profileMap = {};
 
   for (const profile of profiles || []) {
-    profileMap[profile.id] = profile;
+    profileMap[
+      profile.id
+    ] = profile;
   }
 
   return rows.map(row => ({
     ...row,
     profile:
-      profileMap[row.user_id] || null
+      profileMap[
+        row.user_id
+      ] || null
   }));
 }
 
@@ -1053,14 +1103,21 @@ async function createTournament({
   } = await supabase
     .from('tournaments')
     .insert({
-      name: name.trim(),
+      name:
+        name.trim(),
+
       description:
         description.trim() || null,
+
       max_players:
         number(maxPlayers),
-      status: 'open',
+
+      status:
+        'open',
+
       creator_id:
         creatorId,
+
       game_id:
         number(gameId)
     })
@@ -1076,13 +1133,17 @@ async function createTournament({
     .insert({
       tournament_id:
         tournament.id,
+
       user_id:
         creatorId,
+
       seed:
         1
     });
 
-  if (joinError) throw joinError;
+  if (joinError) {
+    throw joinError;
+  }
 
   return tournament;
 }
@@ -1097,11 +1158,19 @@ async function joinTournament({
   } = await supabase
     .from('tournament_players')
     .select('tournament_id,user_id')
-    .eq('tournament_id', tournamentId)
-    .eq('user_id', userId)
+    .eq(
+      'tournament_id',
+      tournamentId
+    )
+    .eq(
+      'user_id',
+      userId
+    )
     .maybeSingle();
 
-  if (existingError) throw existingError;
+  if (existingError) {
+    throw existingError;
+  }
 
   if (existing) {
     throw new Error(
@@ -1122,15 +1191,22 @@ async function joinTournament({
     throw tournamentError;
   }
 
-  if (tournament.status !== 'open') {
+  if (
+    tournament.status !==
+    'open'
+  ) {
     throw new Error(
       'This tournament is not open.'
     );
   }
 
   if (
-    number(tournament.player_count) >=
-    number(tournament.max_players)
+    number(
+      tournament.player_count
+    ) >=
+    number(
+      tournament.max_players
+    )
   ) {
     throw new Error(
       'This tournament is full.'
@@ -1148,15 +1224,19 @@ async function joinTournament({
       tournamentId
     );
 
-  if (playersError) throw playersError;
+  if (playersError) {
+    throw playersError;
+  }
 
   const { error } = await supabase
     .from('tournament_players')
     .insert({
       tournament_id:
         tournamentId,
+
       user_id:
         userId,
+
       seed:
         (players?.length || 0) + 1
     });
@@ -1209,7 +1289,9 @@ async function updateTournamentStatus(
   if (error) throw error;
 }
 
-async function deleteTournament(tournamentId) {
+async function deleteTournament(
+  tournamentId
+) {
   const { error } = await supabase
     .from('tournaments')
     .delete()
@@ -1236,7 +1318,9 @@ async function getClanDetails() {
   return data || [];
 }
 
-async function getMyClanMemberships(userId) {
+async function getMyClanMemberships(
+  userId
+) {
   const { data, error } = await supabase
     .from('clan_members')
     .select(`
@@ -1251,7 +1335,9 @@ async function getMyClanMemberships(userId) {
   return data || [];
 }
 
-async function getClanMembers(clanId) {
+async function getClanMembers(
+  clanId
+) {
   const {
     data: rows,
     error
@@ -1293,13 +1379,17 @@ async function getClanMembers(clanId) {
   const profileMap = {};
 
   for (const profile of profiles || []) {
-    profileMap[profile.id] = profile;
+    profileMap[
+      profile.id
+    ] = profile;
   }
 
   return rows.map(row => ({
     ...row,
     profile:
-      profileMap[row.user_id] || null
+      profileMap[
+        row.user_id
+      ] || null
   }));
 }
 
@@ -1317,16 +1407,24 @@ async function createClan({
   } = await supabase
     .from('clans')
     .insert({
-      name: name.trim(),
-      owner_id: ownerId,
+      name:
+        name.trim(),
+
+      owner_id:
+        ownerId,
+
       description:
         description.trim() || null,
+
       game_id:
         number(gameId),
+
       max_members:
         number(maxMembers),
+
       is_public:
         Boolean(isPublic),
+
       updated_at:
         new Date().toISOString()
     })
@@ -1342,13 +1440,17 @@ async function createClan({
     .insert({
       clan_id:
         clan.id,
+
       user_id:
         ownerId,
+
       role:
         'owner'
     });
 
-  if (memberError) throw memberError;
+  if (memberError) {
+    throw memberError;
+  }
 
   return clan;
 }
@@ -1367,7 +1469,9 @@ async function joinClan({
     .eq('user_id', userId)
     .maybeSingle();
 
-  if (existingError) throw existingError;
+  if (existingError) {
+    throw existingError;
+  }
 
   if (existing) {
     throw new Error(
@@ -1384,7 +1488,9 @@ async function joinClan({
     .eq('id', clanId)
     .single();
 
-  if (clanError) throw clanError;
+  if (clanError) {
+    throw clanError;
+  }
 
   if (!clan.is_public) {
     throw new Error(
@@ -1393,8 +1499,12 @@ async function joinClan({
   }
 
   if (
-    number(clan.member_count) >=
-    number(clan.max_members)
+    number(
+      clan.member_count
+    ) >=
+    number(
+      clan.max_members
+    )
   ) {
     throw new Error(
       'This clan is full.'
@@ -1406,8 +1516,10 @@ async function joinClan({
     .insert({
       clan_id:
         clanId,
+
       user_id:
         userId,
+
       role:
         'member'
     });
@@ -1428,11 +1540,15 @@ async function leaveClan({
   if (error) throw error;
 }
 
-async function updateClan(clanId, updates) {
+async function updateClan(
+  clanId,
+  updates
+) {
   const { error } = await supabase
     .from('clans')
     .update({
       ...updates,
+
       updated_at:
         new Date().toISOString()
     })
@@ -1441,7 +1557,9 @@ async function updateClan(clanId, updates) {
   if (error) throw error;
 }
 
-async function deleteClan(clanId) {
+async function deleteClan(
+  clanId
+) {
   const { error } = await supabase
     .from('clans')
     .delete()
@@ -1454,6 +1572,22 @@ async function deleteClan(clanId) {
 /* =========================================================
    ACTIVITY FEED
 ========================================================= */
+
+const ACTIVITY_MEDIA_BUCKET =
+  'activity-media';
+
+const MAX_ACTIVITY_MEDIA_SIZE =
+  100 * 1024 * 1024;
+
+const allowedActivityMediaTypes = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime'
+];
 
 async function getActivityFeed() {
   const { data, error } = await supabase
@@ -1468,7 +1602,9 @@ async function getActivityFeed() {
   return data || [];
 }
 
-async function getMyPostReactions(userId) {
+async function getMyPostReactions(
+  userId
+) {
   const { data, error } = await supabase
     .from('post_reactions')
     .select(`
@@ -1482,29 +1618,266 @@ async function getMyPostReactions(userId) {
   return data || [];
 }
 
+function cleanActivityFileName(
+  name = 'media'
+) {
+  return name
+    .replace(
+      /[^a-zA-Z0-9._-]/g,
+      '-'
+    )
+    .replace(
+      /-+/g,
+      '-'
+    )
+    .slice(
+      0,
+      120
+    );
+}
+
+function activityMediaKind(
+  mediaType = ''
+) {
+  const lower =
+    String(
+      mediaType
+    ).toLowerCase();
+
+  if (
+    lower === 'image' ||
+    lower.startsWith(
+      'image/'
+    )
+  ) {
+    return 'image';
+  }
+
+  if (
+    lower === 'video' ||
+    lower.startsWith(
+      'video/'
+    )
+  ) {
+    return 'video';
+  }
+
+  return '';
+}
+
+async function uploadActivityMedia({
+  userId,
+  file
+}) {
+  if (!file) {
+    return null;
+  }
+
+  if (
+    !allowedActivityMediaTypes.includes(
+      file.type
+    )
+  ) {
+    throw new Error(
+      'That file type is not supported. Use JPG, PNG, WebP, GIF, MP4, WebM, or MOV.'
+    );
+  }
+
+  if (
+    file.size >
+    MAX_ACTIVITY_MEDIA_SIZE
+  ) {
+    throw new Error(
+      'That file is larger than the 100 MB upload limit.'
+    );
+  }
+
+  const safeName =
+    cleanActivityFileName(
+      file.name
+    );
+
+  const unique =
+    `${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+
+  const path =
+    `${userId}/${unique}-${safeName}`;
+
+  const {
+    error: uploadError
+  } = await supabase.storage
+    .from(
+      ACTIVITY_MEDIA_BUCKET
+    )
+    .upload(
+      path,
+      file,
+      {
+        cacheControl:
+          '3600',
+
+        upsert:
+          false,
+
+        contentType:
+          file.type
+      }
+    );
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  const {
+    data: publicData
+  } = supabase.storage
+    .from(
+      ACTIVITY_MEDIA_BUCKET
+    )
+    .getPublicUrl(
+      path
+    );
+
+  if (
+    !publicData
+      ?.publicUrl
+  ) {
+    await supabase.storage
+      .from(
+        ACTIVITY_MEDIA_BUCKET
+      )
+      .remove([
+        path
+      ]);
+
+    throw new Error(
+      'The media uploaded, but the public URL could not be created.'
+    );
+  }
+
+  return {
+    path,
+    publicUrl:
+      publicData.publicUrl,
+    mediaType:
+      file.type
+  };
+}
+
+function activityMediaPathFromUrl(
+  url
+) {
+  if (!url) return null;
+
+  const marker =
+    `/storage/v1/object/public/${ACTIVITY_MEDIA_BUCKET}/`;
+
+  const markerIndex =
+    url.indexOf(
+      marker
+    );
+
+  if (
+    markerIndex ===
+    -1
+  ) {
+    return null;
+  }
+
+  const encodedPath =
+    url
+      .slice(
+        markerIndex +
+        marker.length
+      )
+      .split('?')[0];
+
+  try {
+    return decodeURIComponent(
+      encodedPath
+    );
+  } catch {
+    return encodedPath;
+  }
+}
+
+async function removeActivityMedia({
+  mediaUrl,
+  userId
+}) {
+  const path =
+    activityMediaPathFromUrl(
+      mediaUrl
+    );
+
+  if (!path) {
+    return;
+  }
+
+  if (
+    !path.startsWith(
+      `${userId}/`
+    )
+  ) {
+    return;
+  }
+
+  const { error } =
+    await supabase.storage
+      .from(
+        ACTIVITY_MEDIA_BUCKET
+      )
+      .remove([
+        path
+      ]);
+
+  if (error) {
+    throw error;
+  }
+}
+
 async function createActivityPost({
   userId,
-  body
+  body,
+  mediaUrl = null,
+  mediaType = null
 }) {
-  const text = body.trim();
+  const text =
+    body.trim();
 
-  if (!text) {
+  if (
+    !text &&
+    !mediaUrl
+  ) {
     throw new Error(
-      'Write something before posting.'
+      'Write something or choose a photo/clip before posting.'
     );
   }
 
   const { error } = await supabase
     .from('posts')
     .insert({
-      user_id: userId,
-      body: text
+      user_id:
+        userId,
+
+      body:
+        text || null,
+
+      media_url:
+        mediaUrl,
+
+      media_type:
+        mediaType
     });
 
   if (error) throw error;
 }
 
-async function deleteActivityPost(postId) {
+async function deleteActivityPost(
+  postId
+) {
   const { error } = await supabase
     .from('posts')
     .delete()
@@ -1521,8 +1894,12 @@ async function addPostReaction({
   const { error } = await supabase
     .from('post_reactions')
     .insert({
-      post_id: postId,
-      user_id: userId,
+      post_id:
+        postId,
+
+      user_id:
+        userId,
+
       reaction
     });
 
@@ -1544,7 +1921,9 @@ async function removePostReaction({
   if (error) throw error;
 }
 
-async function getActivityComments(postId) {
+async function getActivityComments(
+  postId
+) {
   const { data, error } = await supabase
     .from('comment_details')
     .select('*')
@@ -1563,7 +1942,8 @@ async function createActivityComment({
   userId,
   body
 }) {
-  const text = body.trim();
+  const text =
+    body.trim();
 
   if (!text) {
     throw new Error(
@@ -1574,15 +1954,22 @@ async function createActivityComment({
   const { error } = await supabase
     .from('comments')
     .insert({
-      post_id: postId,
-      user_id: userId,
-      body: text
+      post_id:
+        postId,
+
+      user_id:
+        userId,
+
+      body:
+        text
     });
 
   if (error) throw error;
 }
 
-async function deleteActivityComment(commentId) {
+async function deleteActivityComment(
+  commentId
+) {
   const { error } = await supabase
     .from('comments')
     .delete()
@@ -1597,37 +1984,56 @@ async function deleteActivityComment(commentId) {
 ========================================================= */
 
 function Auth() {
-  const [mode, setMode] =
-    useState('login');
+  const [
+    mode,
+    setMode
+  ] = useState(
+    'login'
+  );
 
-  const [email, setEmail] =
-    useState('');
+  const [
+    email,
+    setEmail
+  ] = useState('');
 
-  const [password, setPassword] =
-    useState('');
+  const [
+    password,
+    setPassword
+  ] = useState('');
 
-  const [username, setUsername] =
-    useState('');
+  const [
+    username,
+    setUsername
+  ] = useState('');
 
   const [
     displayName,
     setDisplayName
   ] = useState('');
 
-  const [busy, setBusy] =
-    useState(false);
+  const [
+    busy,
+    setBusy
+  ] = useState(false);
 
-  const [msg, setMsg] =
-    useState('');
+  const [
+    msg,
+    setMsg
+  ] = useState('');
 
-  async function submit(e) {
+  async function submit(
+    e
+  ) {
     e.preventDefault();
 
     setBusy(true);
     setMsg('');
 
     try {
-      if (mode === 'login') {
+      if (
+        mode ===
+        'login'
+      ) {
         await signIn(
           email,
           password
@@ -1645,7 +2051,9 @@ function Auth() {
           'Account created. Check your email if confirmation is enabled.'
         );
 
-        setMode('login');
+        setMode(
+          'login'
+        );
       }
 
     } catch (error) {
@@ -1692,6 +2100,7 @@ function Auth() {
 
           {mode === 'signup' && (
             <>
+
               <label>
                 Username
 
@@ -1718,6 +2127,7 @@ function Auth() {
                   }
                 />
               </label>
+
             </>
           )}
 
@@ -1961,7 +2371,9 @@ function Dashboard({
         <button
           className="primary"
           onClick={() =>
-            setPage('stats')
+            setPage(
+              'stats'
+            )
           }
         >
           <BarChart3 size={17} />
@@ -2089,7 +2501,8 @@ function Dashboard({
           <div className="progress">
             <i
               style={{
-                width: '0%'
+                width:
+                  '0%'
               }}
             />
           </div>
@@ -2129,7 +2542,9 @@ function Dashboard({
           <button
             className="linkbtn"
             onClick={() =>
-              setPage('stats')
+              setPage(
+                'stats'
+              )
             }
           >
             See all
@@ -2148,9 +2563,12 @@ function Dashboard({
                 openGame(game)
               }
               style={{
-                all: 'unset',
-                cursor: 'pointer',
-                display: 'block'
+                all:
+                  'unset',
+                cursor:
+                  'pointer',
+                display:
+                  'block'
               }}
             >
 
@@ -2317,7 +2735,8 @@ function Stats({
                     openGame(game)
                   }
                   style={{
-                    cursor: 'pointer'
+                    cursor:
+                      'pointer'
                   }}
                 >
 
@@ -2523,18 +2942,26 @@ function LeaderboardPage({
   const [
     gameFilter,
     setGameFilter
-  ] = useState('Overall');
+  ] = useState(
+    'Overall'
+  );
 
   const [
     metric,
     setMetric
-  ] = useState('kills');
+  ] = useState(
+    'kills'
+  );
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading
+  ] = useState(true);
 
-  const [error, setError] =
-    useState('');
+  const [
+    error,
+    setError
+  ] = useState('');
 
   useEffect(() => {
     async function loadLeaderboard() {
@@ -2550,8 +2977,13 @@ function LeaderboardPage({
           loadGameLeaderboard()
         ]);
 
-        setOverallRows(overall);
-        setGameRows(byGame);
+        setOverallRows(
+          overall
+        );
+
+        setGameRows(
+          byGame
+        );
 
       } catch (err) {
         setError(
@@ -2567,32 +2999,43 @@ function LeaderboardPage({
     loadLeaderboard();
   }, []);
 
-  const rows = useMemo(() => {
-    let source;
+  const rows =
+    useMemo(() => {
+      let source;
 
-    if (gameFilter === 'Overall') {
-      source = [...overallRows];
+      if (
+        gameFilter ===
+        'Overall'
+      ) {
+        source = [
+          ...overallRows
+        ];
 
-    } else {
-      source =
-        gameRows.filter(
-          row =>
-            row.game_name === gameFilter
-        );
-    }
+      } else {
+        source =
+          gameRows.filter(
+            row =>
+              row.game_name ===
+              gameFilter
+          );
+      }
 
-    return source.sort(
-      (a, b) =>
-        number(b[metric]) -
-        number(a[metric])
-    );
+      return source.sort(
+        (a, b) =>
+          number(
+            b[metric]
+          ) -
+          number(
+            a[metric]
+          )
+      );
 
-  }, [
-    overallRows,
-    gameRows,
-    gameFilter,
-    metric
-  ]);
+    }, [
+      overallRows,
+      gameRows,
+      gameFilter,
+      metric
+    ]);
 
   function metricValue(row) {
     if (
@@ -2669,7 +3112,9 @@ function LeaderboardPage({
                   : ''
               }
               onClick={() =>
-                setGameFilter(game)
+                setGameFilter(
+                  game
+                )
               }
             >
               {game}
@@ -2784,8 +3229,11 @@ function LeaderboardPage({
 
                   <div
                     style={{
-                      minWidth: '40px',
-                      fontWeight: '800'
+                      minWidth:
+                        '40px',
+
+                      fontWeight:
+                        '800'
                     }}
                   >
                     #{index + 1}
@@ -2799,7 +3247,8 @@ function LeaderboardPage({
 
                   <div
                     style={{
-                      flex: 1
+                      flex:
+                        1
                     }}
                   >
 
@@ -2819,7 +3268,9 @@ function LeaderboardPage({
                   <div className="metric">
 
                     <b>
-                      {metricValue(row)}
+                      {metricValue(
+                        row
+                      )}
                     </b>
 
                     <small>
@@ -2855,11 +3306,15 @@ function AchievementsPage({
     setAchievements
   ] = useState([]);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading
+  ] = useState(true);
 
-  const [error, setError] =
-    useState('');
+  const [
+    error,
+    setError
+  ] = useState('');
 
   async function load() {
     setLoading(true);
@@ -2876,7 +3331,9 @@ function AchievementsPage({
           user.id
         );
 
-      setAchievements(rows);
+      setAchievements(
+        rows
+      );
 
     } catch (err) {
       setError(
@@ -2929,7 +3386,9 @@ function AchievementsPage({
       0
     );
 
-  function getProgress(achievement) {
+  function getProgress(
+    achievement
+  ) {
     const rule =
       achievementRules[
         achievement.name
@@ -2937,8 +3396,12 @@ function AchievementsPage({
 
     if (!rule) {
       return {
-        supported: false,
-        percent: 0,
+        supported:
+          false,
+
+        percent:
+          0,
+
         label:
           'Match-history tracking required'
       };
@@ -2946,7 +3409,9 @@ function AchievementsPage({
 
     const current =
       number(
-        rule.getValue(totals)
+        rule.getValue(
+          totals
+        )
       );
 
     const percent =
@@ -2961,7 +3426,9 @@ function AchievementsPage({
       );
 
     return {
-      supported: true,
+      supported:
+        true,
+
       percent,
 
       label:
@@ -2998,8 +3465,11 @@ function AchievementsPage({
         </div>
 
         <div className="achievement-points">
+
           <Award size={18} />
+
           {earnedPoints} points
+
         </div>
 
       </div>
@@ -3078,7 +3548,9 @@ function AchievementsPage({
 
               return (
                 <div
-                  key={achievement.id}
+                  key={
+                    achievement.id
+                  }
                   className={`achievement ${
                     isUnlocked
                       ? 'unlocked'
@@ -3092,7 +3564,8 @@ function AchievementsPage({
 
                   <div
                     style={{
-                      flex: 1
+                      flex:
+                        1
                     }}
                   >
 
@@ -3114,6 +3587,7 @@ function AchievementsPage({
 
                     {progress.supported && (
                       <>
+
                         <div
                           className="progress"
                           style={{
@@ -3121,17 +3595,20 @@ function AchievementsPage({
                               '12px'
                           }}
                         >
+
                           <i
                             style={{
                               width:
                                 `${progress.percent}%`
                             }}
                           />
+
                         </div>
 
                         <small>
                           {progress.label}
                         </small>
+
                       </>
                     )}
 
@@ -3139,7 +3616,8 @@ function AchievementsPage({
 
                   <strong
                     style={{
-                      fontSize: '22px'
+                      fontSize:
+                        '22px'
                     }}
                   >
                     {isUnlocked
@@ -3168,11 +3646,15 @@ function AchievementsPage({
 function ChallengesPage({
   user
 }) {
-  const [games, setGames] =
-    useState([]);
+  const [
+    games,
+    setGames
+  ] = useState([]);
 
-  const [friends, setFriends] =
-    useState([]);
+  const [
+    friends,
+    setFriends
+  ] = useState([]);
 
   const [
     challenges,
@@ -3184,23 +3666,39 @@ function ChallengesPage({
     setOpponentId
   ] = useState('');
 
-  const [gameId, setGameId] =
-    useState('');
+  const [
+    gameId,
+    setGameId
+  ] = useState('');
 
-  const [metric, setMetric] =
-    useState('kills');
+  const [
+    metric,
+    setMetric
+  ] = useState(
+    'kills'
+  );
 
-  const [target, setTarget] =
-    useState('100');
+  const [
+    target,
+    setTarget
+  ] = useState(
+    '100'
+  );
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading
+  ] = useState(true);
 
-  const [busy, setBusy] =
-    useState(false);
+  const [
+    busy,
+    setBusy
+  ] = useState(false);
 
-  const [message, setMessage] =
-    useState('');
+  const [
+    message,
+    setMessage
+  ] = useState('');
 
   async function load() {
     setLoading(true);
@@ -3212,14 +3710,24 @@ function ChallengesPage({
         challengeRows
       ] = await Promise.all([
         getGames(),
-        getFriendships(user.id),
-        getChallenges(user.id)
+
+        getFriendships(
+          user.id
+        ),
+
+        getChallenges(
+          user.id
+        )
       ]);
 
-      setGames(gameList);
+      setGames(
+        gameList
+      );
+
       setFriends(
         friendshipData.friends
       );
+
       setChallenges(
         challengeRows
       );
@@ -3250,7 +3758,9 @@ function ChallengesPage({
     load();
   }, [user.id]);
 
-  async function submitChallenge(e) {
+  async function submitChallenge(
+    e
+  ) {
     e.preventDefault();
 
     setBusy(true);
@@ -3270,7 +3780,9 @@ function ChallengesPage({
       }
 
       if (
-        number(target) <= 0
+        number(
+          target
+        ) <= 0
       ) {
         throw new Error(
           'Target must be greater than zero.'
@@ -3284,12 +3796,16 @@ function ChallengesPage({
         opponentId,
 
         gameId:
-          number(gameId),
+          number(
+            gameId
+          ),
 
         metric,
 
         target:
-          number(target)
+          number(
+            target
+          )
       });
 
       await load();
@@ -3309,12 +3825,17 @@ function ChallengesPage({
     }
   }
 
-  async function accept(row) {
+  async function accept(
+    row
+  ) {
     setBusy(true);
     setMessage('');
 
     try {
-      await acceptChallenge(row);
+      await acceptChallenge(
+        row
+      );
+
       await load();
 
       setMessage(
@@ -3332,7 +3853,9 @@ function ChallengesPage({
     }
   }
 
-  async function decline(row) {
+  async function decline(
+    row
+  ) {
     setBusy(true);
     setMessage('');
 
@@ -3358,7 +3881,9 @@ function ChallengesPage({
     }
   }
 
-  async function cancel(row) {
+  async function cancel(
+    row
+  ) {
     setBusy(true);
     setMessage('');
 
@@ -3396,7 +3921,10 @@ function ChallengesPage({
             'active'
         );
 
-      for (const challenge of active) {
+      for (
+        const challenge
+        of active
+      ) {
         await refreshChallenge(
           challenge
         );
@@ -3451,7 +3979,9 @@ function ChallengesPage({
         'completed'
     );
 
-  function opponentName(row) {
+  function opponentName(
+    row
+  ) {
     if (
       row.creator_id ===
       user.id
@@ -3470,15 +4000,20 @@ function ChallengesPage({
     );
   }
 
-  function challengeCard(row) {
+  function challengeCard(
+    row
+  ) {
     const targetValue =
       Math.max(
         1,
-        number(row.target)
+        number(
+          row.target
+        )
       );
 
     const myProgress =
-      row.creator_id === user.id
+      row.creator_id ===
+      user.id
         ? number(
             row.creator_progress
           )
@@ -3487,7 +4022,8 @@ function ChallengesPage({
           );
 
     const theirProgress =
-      row.creator_id === user.id
+      row.creator_id ===
+      user.id
         ? number(
             row.opponent_progress
           )
@@ -3514,7 +4050,9 @@ function ChallengesPage({
       );
 
     const name =
-      opponentName(row);
+      opponentName(
+        row
+      );
 
     const iWon =
       row.status ===
@@ -3527,7 +4065,8 @@ function ChallengesPage({
         className="panel"
         key={row.id}
         style={{
-          marginBottom: '16px'
+          marginBottom:
+            '16px'
         }}
       >
 
@@ -3567,6 +4106,7 @@ function ChallengesPage({
         {row.status ===
           'active' && (
           <>
+
             <div
               style={{
                 marginBottom:
@@ -3631,6 +4171,7 @@ function ChallengesPage({
               </div>
 
             </div>
+
           </>
         )}
 
@@ -3676,7 +4217,9 @@ function ChallengesPage({
 
         <button
           className="primary"
-          onClick={refreshAll}
+          onClick={
+            refreshAll
+          }
           disabled={busy}
         >
           <RefreshCw size={17} />
@@ -3781,8 +4324,12 @@ function ChallengesPage({
                 {games.map(
                   game => (
                     <option
-                      key={game.id}
-                      value={game.id}
+                      key={
+                        game.id
+                      }
+                      value={
+                        game.id
+                      }
                     >
                       {game.name}
                     </option>
@@ -3889,7 +4436,8 @@ function ChallengesPage({
 
               <div
                 style={{
-                  flex: 1
+                  flex:
+                    1
                 }}
               >
 
@@ -3914,7 +4462,9 @@ function ChallengesPage({
               <button
                 className="primary"
                 onClick={() =>
-                  accept(row)
+                  accept(
+                    row
+                  )
                 }
                 disabled={busy}
               >
@@ -3925,7 +4475,9 @@ function ChallengesPage({
               <button
                 className="iconbtn"
                 onClick={() =>
-                  decline(row)
+                  decline(
+                    row
+                  )
                 }
                 disabled={busy}
               >
@@ -3975,7 +4527,8 @@ function ChallengesPage({
 
               <div
                 style={{
-                  flex: 1
+                  flex:
+                    1
                 }}
               >
 
@@ -3994,7 +4547,9 @@ function ChallengesPage({
               <button
                 className="logout"
                 onClick={() =>
-                  cancel(row)
+                  cancel(
+                    row
+                  )
                 }
                 disabled={busy}
               >
@@ -4058,8 +4613,10 @@ function TournamentsPage({
     setMemberships
   ] = useState([]);
 
-  const [games, setGames] =
-    useState([]);
+  const [
+    games,
+    setGames
+  ] = useState([]);
 
   const [
     selectedTournament,
@@ -4071,30 +4628,40 @@ function TournamentsPage({
     setPlayers
   ] = useState([]);
 
-  const [name, setName] =
-    useState('');
+  const [
+    name,
+    setName
+  ] = useState('');
 
   const [
     description,
     setDescription
   ] = useState('');
 
-  const [gameId, setGameId] =
-    useState('');
+  const [
+    gameId,
+    setGameId
+  ] = useState('');
 
   const [
     maxPlayers,
     setMaxPlayers
   ] = useState('8');
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading
+  ] = useState(true);
 
-  const [busy, setBusy] =
-    useState(false);
+  const [
+    busy,
+    setBusy
+  ] = useState(false);
 
-  const [message, setMessage] =
-    useState('');
+  const [
+    message,
+    setMessage
+  ] = useState('');
 
   async function load() {
     setLoading(true);
@@ -4106,9 +4673,11 @@ function TournamentsPage({
         gameRows
       ] = await Promise.all([
         getTournamentDetails(),
+
         getMyTournamentMemberships(
           user.id
         ),
+
         getGames()
       ]);
 
@@ -4150,15 +4719,20 @@ function TournamentsPage({
     load();
   }, [user.id]);
 
-  function isJoined(id) {
+  function isJoined(
+    tournamentId
+  ) {
     return memberships.some(
       membership =>
-        membership.tournament_id ===
-        id
+        membership
+          .tournament_id ===
+        tournamentId
     );
   }
 
-  async function create(e) {
+  async function create(
+    e
+  ) {
     e.preventDefault();
 
     setBusy(true);
@@ -4168,17 +4742,27 @@ function TournamentsPage({
       await createTournament({
         creatorId:
           user.id,
+
         name,
+
         description,
+
         gameId:
-          number(gameId),
+          number(
+            gameId
+          ),
+
         maxPlayers:
-          number(maxPlayers)
+          number(
+            maxPlayers
+          )
       });
 
       setName('');
       setDescription('');
-      setMaxPlayers('8');
+      setMaxPlayers(
+        '8'
+      );
 
       await load();
 
@@ -4197,8 +4781,11 @@ function TournamentsPage({
     }
   }
 
-  async function openTournament(row) {
+  async function openTournament(
+    row
+  ) {
     setBusy(true);
+    setMessage('');
 
     try {
       const result =
@@ -4210,7 +4797,9 @@ function TournamentsPage({
         row
       );
 
-      setPlayers(result);
+      setPlayers(
+        result
+      );
 
     } catch (error) {
       setMessage(
@@ -4223,13 +4812,17 @@ function TournamentsPage({
     }
   }
 
-  async function join(row) {
+  async function join(
+    row
+  ) {
     setBusy(true);
+    setMessage('');
 
     try {
       await joinTournament({
         tournamentId:
           row.id,
+
         userId:
           user.id
       });
@@ -4251,8 +4844,11 @@ function TournamentsPage({
     }
   }
 
-  async function leave(row) {
+  async function leave(
+    row
+  ) {
     setBusy(true);
+    setMessage('');
 
     try {
       if (
@@ -4267,6 +4863,7 @@ function TournamentsPage({
       await leaveTournament({
         tournamentId:
           row.id,
+
         userId:
           user.id
       });
@@ -4290,8 +4887,11 @@ function TournamentsPage({
     }
   }
 
-  async function start(row) {
+  async function start(
+    row
+  ) {
     setBusy(true);
+    setMessage('');
 
     try {
       if (
@@ -4328,8 +4928,11 @@ function TournamentsPage({
     }
   }
 
-  async function complete(row) {
+  async function complete(
+    row
+  ) {
     setBusy(true);
+    setMessage('');
 
     try {
       await updateTournamentStatus(
@@ -4356,7 +4959,9 @@ function TournamentsPage({
     }
   }
 
-  async function remove(row) {
+  async function remove(
+    row
+  ) {
     if (
       !window.confirm(
         `Delete "${row.name}"?`
@@ -4366,6 +4971,7 @@ function TournamentsPage({
     }
 
     setBusy(true);
+    setMessage('');
 
     try {
       await deleteTournament(
@@ -4391,7 +4997,9 @@ function TournamentsPage({
     }
   }
 
-  if (selectedTournament) {
+  if (
+    selectedTournament
+  ) {
     const row =
       selectedTournament;
 
@@ -4400,7 +5008,9 @@ function TournamentsPage({
       user.id;
 
     const joined =
-      isJoined(row.id);
+      isJoined(
+        row.id
+      );
 
     return (
       <div className="page">
@@ -4411,6 +5021,7 @@ function TournamentsPage({
             setSelectedTournament(
               null
             );
+
             setPlayers([]);
           }}
         >
@@ -4499,14 +5110,18 @@ function TournamentsPage({
             (item, index) => {
 
               const playerName =
-                item.profile?.display_name ||
-                item.profile?.username ||
+                item.profile
+                  ?.display_name ||
+                item.profile
+                  ?.username ||
                 'Player';
 
               return (
                 <div
                   className="friend"
-                  key={item.user_id}
+                  key={
+                    item.user_id
+                  }
                 >
 
                   <div>
@@ -4521,7 +5136,8 @@ function TournamentsPage({
 
                   <div
                     style={{
-                      flex: 1
+                      flex:
+                        1
                     }}
                   >
                     <b>
@@ -4546,9 +5162,14 @@ function TournamentsPage({
 
           <div
             style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '10px'
+              display:
+                'flex',
+
+              flexWrap:
+                'wrap',
+
+              gap:
+                '10px'
             }}
           >
 
@@ -4559,7 +5180,9 @@ function TournamentsPage({
               <button
                 className="primary"
                 onClick={() =>
-                  join(row)
+                  join(
+                    row
+                  )
                 }
                 disabled={busy}
               >
@@ -4576,8 +5199,11 @@ function TournamentsPage({
               <button
                 className="logout"
                 onClick={() =>
-                  leave(row)
+                  leave(
+                    row
+                  )
                 }
+                disabled={busy}
               >
                 Leave Tournament
               </button>
@@ -4591,8 +5217,11 @@ function TournamentsPage({
               <button
                 className="primary"
                 onClick={() =>
-                  start(row)
+                  start(
+                    row
+                  )
                 }
+                disabled={busy}
               >
                 Start Tournament
               </button>
@@ -4606,8 +5235,11 @@ function TournamentsPage({
               <button
                 className="primary"
                 onClick={() =>
-                  complete(row)
+                  complete(
+                    row
+                  )
                 }
+                disabled={busy}
               >
                 Complete Tournament
               </button>
@@ -4615,14 +5247,19 @@ function TournamentsPage({
             )}
 
             {creator && (
+
               <button
                 className="logout"
                 onClick={() =>
-                  remove(row)
+                  remove(
+                    row
+                  )
                 }
+                disabled={busy}
               >
                 Delete Tournament
               </button>
+
             )}
 
           </div>
@@ -4656,7 +5293,10 @@ function TournamentsPage({
 
         <button
           className="primary"
-          onClick={load}
+          onClick={
+            load
+          }
+          disabled={busy}
         >
           <RefreshCw size={17} />
           Refresh
@@ -4688,17 +5328,24 @@ function TournamentsPage({
 
         </div>
 
-        <form onSubmit={create}>
+        <form
+          onSubmit={
+            create
+          }
+        >
 
           <label>
             Tournament Name
 
             <input
-              value={name}
-              onChange={e =>
-                setName(
-                  e.target.value
-                )
+              value={
+                name
+              }
+              onChange={
+                e =>
+                  setName(
+                    e.target.value
+                  )
               }
               required
             />
@@ -4708,11 +5355,14 @@ function TournamentsPage({
             Description
 
             <input
-              value={description}
-              onChange={e =>
-                setDescription(
-                  e.target.value
-                )
+              value={
+                description
+              }
+              onChange={
+                e =>
+                  setDescription(
+                    e.target.value
+                  )
               }
             />
           </label>
@@ -4721,24 +5371,33 @@ function TournamentsPage({
             Game
 
             <select
-              value={gameId}
-              onChange={e =>
-                setGameId(
-                  e.target.value
-                )
+              value={
+                gameId
+              }
+              onChange={
+                e =>
+                  setGameId(
+                    e.target.value
+                  )
               }
             >
 
-              {games.map(game => (
+              {games.map(
+                game => (
 
-                <option
-                  key={game.id}
-                  value={game.id}
-                >
-                  {game.name}
-                </option>
+                  <option
+                    key={
+                      game.id
+                    }
+                    value={
+                      game.id
+                    }
+                  >
+                    {game.name}
+                  </option>
 
-              ))}
+                )
+              )}
 
             </select>
 
@@ -4748,11 +5407,14 @@ function TournamentsPage({
             Maximum Players
 
             <select
-              value={maxPlayers}
-              onChange={e =>
-                setMaxPlayers(
-                  e.target.value
-                )
+              value={
+                maxPlayers
+              }
+              onChange={
+                e =>
+                  setMaxPlayers(
+                    e.target.value
+                  )
               }
             >
 
@@ -4820,61 +5482,67 @@ function TournamentsPage({
 
       ) : (
 
-        tournaments.map(row => (
+        tournaments.map(
+          row => (
 
-          <section
-            className="panel"
-            key={row.id}
-            style={{
-              marginBottom:
-                '16px'
-            }}
-          >
+            <section
+              className="panel"
+              key={
+                row.id
+              }
+              style={{
+                marginBottom:
+                  '16px'
+              }}
+            >
 
-            <div className="panel-head">
+              <div className="panel-head">
 
-              <div>
+                <div>
 
-                <div className="eyebrow">
-                  {row.game_name ||
-                    'TOURNAMENT'}
+                  <div className="eyebrow">
+                    {row.game_name ||
+                      'TOURNAMENT'}
+                  </div>
+
+                  <h2>
+                    {row.name}
+                  </h2>
+
+                  <span>
+                    {formatNumber(
+                      row.player_count
+                    )} / {formatNumber(
+                      row.max_players
+                    )} players
+                  </span>
+
                 </div>
 
-                <h2>
-                  {row.name}
-                </h2>
-
-                <span>
-                  {formatNumber(
-                    row.player_count
-                  )} / {formatNumber(
-                    row.max_players
-                  )} players
+                <span className="pill">
+                  {String(
+                    row.status
+                  ).toUpperCase()}
                 </span>
 
               </div>
 
-              <span className="pill">
-                {String(
-                  row.status
-                ).toUpperCase()}
-              </span>
+              <button
+                className="primary"
+                onClick={() =>
+                  openTournament(
+                    row
+                  )
+                }
+              >
+                View Tournament
+                <ChevronRight size={16} />
+              </button>
 
-            </div>
+            </section>
 
-            <button
-              className="primary"
-              onClick={() =>
-                openTournament(row)
-              }
-            >
-              View Tournament
-              <ChevronRight size={16} />
-            </button>
-
-          </section>
-
-        ))
+          )
+        )
 
       )}
 
@@ -4890,16 +5558,20 @@ function TournamentsPage({
 function ClansPage({
   user
 }) {
-  const [clans, setClans] =
-    useState([]);
+  const [
+    clans,
+    setClans
+  ] = useState([]);
 
   const [
     memberships,
     setMemberships
   ] = useState([]);
 
-  const [games, setGames] =
-    useState([]);
+  const [
+    games,
+    setGames
+  ] = useState([]);
 
   const [
     selectedClan,
@@ -4911,35 +5583,47 @@ function ClansPage({
     setClanMembers
   ] = useState([]);
 
-  const [name, setName] =
-    useState('');
+  const [
+    name,
+    setName
+  ] = useState('');
 
   const [
     description,
     setDescription
   ] = useState('');
 
-  const [gameId, setGameId] =
-    useState('');
+  const [
+    gameId,
+    setGameId
+  ] = useState('');
 
   const [
     maxMembers,
     setMaxMembers
-  ] = useState('25');
+  ] = useState(
+    '25'
+  );
 
   const [
     isPublic,
     setIsPublic
   ] = useState(true);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading
+  ] = useState(true);
 
-  const [busy, setBusy] =
-    useState(false);
+  const [
+    busy,
+    setBusy
+  ] = useState(false);
 
-  const [message, setMessage] =
-    useState('');
+  const [
+    message,
+    setMessage
+  ] = useState('');
 
   async function load() {
     setLoading(true);
@@ -4951,17 +5635,25 @@ function ClansPage({
         gameRows
       ] = await Promise.all([
         getClanDetails(),
+
         getMyClanMemberships(
           user.id
         ),
+
         getGames()
       ]);
 
-      setClans(clanRows);
+      setClans(
+        clanRows
+      );
+
       setMemberships(
         membershipRows
       );
-      setGames(gameRows);
+
+      setGames(
+        gameRows
+      );
 
       if (
         !gameId &&
@@ -4989,7 +5681,9 @@ function ClansPage({
     load();
   }, [user.id]);
 
-  function isMember(clanId) {
+  function isMember(
+    clanId
+  ) {
     return memberships.some(
       membership =>
         membership.clan_id ===
@@ -4997,7 +5691,9 @@ function ClansPage({
     );
   }
 
-  function myRole(clanId) {
+  function myRole(
+    clanId
+  ) {
     return memberships.find(
       membership =>
         membership.clan_id ===
@@ -5005,7 +5701,9 @@ function ClansPage({
     )?.role;
   }
 
-  async function create(e) {
+  async function create(
+    e
+  ) {
     e.preventDefault();
 
     setBusy(true);
@@ -5023,21 +5721,32 @@ function ClansPage({
           user.id,
 
         name,
+
         description,
 
         gameId:
-          number(gameId),
+          number(
+            gameId
+          ),
 
         maxMembers:
-          number(maxMembers),
+          number(
+            maxMembers
+          ),
 
         isPublic
       });
 
       setName('');
       setDescription('');
-      setMaxMembers('25');
-      setIsPublic(true);
+
+      setMaxMembers(
+        '25'
+      );
+
+      setIsPublic(
+        true
+      );
 
       await load();
 
@@ -5056,13 +5765,17 @@ function ClansPage({
     }
   }
 
-  async function join(row) {
+  async function join(
+    row
+  ) {
     setBusy(true);
+    setMessage('');
 
     try {
       await joinClan({
         clanId:
           row.id,
+
         userId:
           user.id
       });
@@ -5084,8 +5797,11 @@ function ClansPage({
     }
   }
 
-  async function leave(row) {
+  async function leave(
+    row
+  ) {
     setBusy(true);
+    setMessage('');
 
     try {
       if (
@@ -5100,12 +5816,18 @@ function ClansPage({
       await leaveClan({
         clanId:
           row.id,
+
         userId:
           user.id
       });
 
-      setSelectedClan(null);
-      setClanMembers([]);
+      setSelectedClan(
+        null
+      );
+
+      setClanMembers(
+        []
+      );
 
       await load();
 
@@ -5120,8 +5842,11 @@ function ClansPage({
     }
   }
 
-  async function openClan(row) {
+  async function openClan(
+    row
+  ) {
     setBusy(true);
+    setMessage('');
 
     try {
       const result =
@@ -5129,8 +5854,13 @@ function ClansPage({
           row.id
         );
 
-      setSelectedClan(row);
-      setClanMembers(result);
+      setSelectedClan(
+        row
+      );
+
+      setClanMembers(
+        result
+      );
 
     } catch (error) {
       setMessage(
@@ -5143,8 +5873,11 @@ function ClansPage({
     }
   }
 
-  async function togglePrivacy(row) {
+  async function togglePrivacy(
+    row
+  ) {
     setBusy(true);
+    setMessage('');
 
     try {
       const nextPublic =
@@ -5177,7 +5910,9 @@ function ClansPage({
     }
   }
 
-  async function removeClan(row) {
+  async function removeClan(
+    row
+  ) {
     if (
       !window.confirm(
         `Delete "${row.name}"?`
@@ -5187,14 +5922,20 @@ function ClansPage({
     }
 
     setBusy(true);
+    setMessage('');
 
     try {
       await deleteClan(
         row.id
       );
 
-      setSelectedClan(null);
-      setClanMembers([]);
+      setSelectedClan(
+        null
+      );
+
+      setClanMembers(
+        []
+      );
 
       await load();
 
@@ -5209,7 +5950,9 @@ function ClansPage({
     }
   }
 
-  if (selectedClan) {
+  if (
+    selectedClan
+  ) {
     const row =
       selectedClan;
 
@@ -5218,7 +5961,9 @@ function ClansPage({
       user.id;
 
     const joined =
-      isMember(row.id);
+      isMember(
+        row.id
+      );
 
     const full =
       number(
@@ -5234,8 +5979,13 @@ function ClansPage({
         <button
           className="linkbtn"
           onClick={() => {
-            setSelectedClan(null);
-            setClanMembers([]);
+            setSelectedClan(
+              null
+            );
+
+            setClanMembers(
+              []
+            );
           }}
         >
           <ChevronLeft size={18} />
@@ -5308,7 +6058,9 @@ function ClansPage({
                 ? 'OWNER'
                 : joined
                 ? (
-                    myRole(row.id) ||
+                    myRole(
+                      row.id
+                    ) ||
                     'MEMBER'
                   ).toUpperCase()
                 : 'NOT JOINED'
@@ -5347,54 +6099,59 @@ function ClansPage({
 
           </div>
 
-          {clanMembers.map(member => {
+          {clanMembers.map(
+            member => {
 
-            const playerName =
-              member.profile
-                ?.display_name ||
-              member.profile
-                ?.username ||
-              'Player';
+              const playerName =
+                member.profile
+                  ?.display_name ||
+                member.profile
+                  ?.username ||
+                'Player';
 
-            return (
-              <div
-                className="friend"
-                key={member.user_id}
-              >
-
-                <div className="avatar">
-                  {playerName[0]
-                    .toUpperCase()}
-                </div>
-
+              return (
                 <div
-                  style={{
-                    flex: 1
-                  }}
+                  className="friend"
+                  key={
+                    member.user_id
+                  }
                 >
 
-                  <b>
-                    {playerName}
-                  </b>
+                  <div className="avatar">
+                    {playerName[0]
+                      .toUpperCase()}
+                  </div>
 
-                  <small>
-                    @{member.profile
-                      ?.username ||
-                      'player'}
-                  </small>
+                  <div
+                    style={{
+                      flex:
+                        1
+                    }}
+                  >
+
+                    <b>
+                      {playerName}
+                    </b>
+
+                    <small>
+                      @{member.profile
+                        ?.username ||
+                        'player'}
+                    </small>
+
+                  </div>
+
+                  <span className="pill">
+                    {String(
+                      member.role ||
+                      'member'
+                    ).toUpperCase()}
+                  </span>
 
                 </div>
-
-                <span className="pill">
-                  {String(
-                    member.role ||
-                    'member'
-                  ).toUpperCase()}
-                </span>
-
-              </div>
-            );
-          })}
+              );
+            }
+          )}
 
         </section>
 
@@ -5402,9 +6159,14 @@ function ClansPage({
 
           <div
             style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '10px'
+              display:
+                'flex',
+
+              flexWrap:
+                'wrap',
+
+              gap:
+                '10px'
             }}
           >
 
@@ -5415,8 +6177,11 @@ function ClansPage({
               <button
                 className="primary"
                 onClick={() =>
-                  join(row)
+                  join(
+                    row
+                  )
                 }
+                disabled={busy}
               >
                 Join Clan
               </button>
@@ -5429,8 +6194,11 @@ function ClansPage({
               <button
                 className="logout"
                 onClick={() =>
-                  leave(row)
+                  leave(
+                    row
+                  )
                 }
+                disabled={busy}
               >
                 Leave Clan
               </button>
@@ -5442,8 +6210,11 @@ function ClansPage({
               <button
                 className="primary"
                 onClick={() =>
-                  togglePrivacy(row)
+                  togglePrivacy(
+                    row
+                  )
                 }
+                disabled={busy}
               >
                 {row.is_public
                   ? 'Make Private'
@@ -5457,8 +6228,11 @@ function ClansPage({
               <button
                 className="logout"
                 onClick={() =>
-                  removeClan(row)
+                  removeClan(
+                    row
+                  )
                 }
+                disabled={busy}
               >
                 Delete Clan
               </button>
@@ -5496,7 +6270,10 @@ function ClansPage({
 
         <button
           className="primary"
-          onClick={load}
+          onClick={
+            load
+          }
+          disabled={busy}
         >
           <RefreshCw size={17} />
           Refresh
@@ -5528,17 +6305,24 @@ function ClansPage({
 
         </div>
 
-        <form onSubmit={create}>
+        <form
+          onSubmit={
+            create
+          }
+        >
 
           <label>
             Clan Name
 
             <input
-              value={name}
-              onChange={e =>
-                setName(
-                  e.target.value
-                )
+              value={
+                name
+              }
+              onChange={
+                e =>
+                  setName(
+                    e.target.value
+                  )
               }
               required
             />
@@ -5548,11 +6332,14 @@ function ClansPage({
             Description
 
             <input
-              value={description}
-              onChange={e =>
-                setDescription(
-                  e.target.value
-                )
+              value={
+                description
+              }
+              onChange={
+                e =>
+                  setDescription(
+                    e.target.value
+                  )
               }
             />
           </label>
@@ -5561,24 +6348,33 @@ function ClansPage({
             Primary Game
 
             <select
-              value={gameId}
-              onChange={e =>
-                setGameId(
-                  e.target.value
-                )
+              value={
+                gameId
+              }
+              onChange={
+                e =>
+                  setGameId(
+                    e.target.value
+                  )
               }
             >
 
-              {games.map(game => (
+              {games.map(
+                game => (
 
-                <option
-                  key={game.id}
-                  value={game.id}
-                >
-                  {game.name}
-                </option>
+                  <option
+                    key={
+                      game.id
+                    }
+                    value={
+                      game.id
+                    }
+                  >
+                    {game.name}
+                  </option>
 
-              ))}
+                )
+              )}
 
             </select>
 
@@ -5588,11 +6384,14 @@ function ClansPage({
             Maximum Members
 
             <select
-              value={maxMembers}
-              onChange={e =>
-                setMaxMembers(
-                  e.target.value
-                )
+              value={
+                maxMembers
+              }
+              onChange={
+                e =>
+                  setMaxMembers(
+                    e.target.value
+                  )
               }
             >
 
@@ -5625,11 +6424,12 @@ function ClansPage({
                   ? 'public'
                   : 'private'
               }
-              onChange={e =>
-                setIsPublic(
-                  e.target.value ===
-                  'public'
-                )
+              onChange={
+                e =>
+                  setIsPublic(
+                    e.target.value ===
+                    'public'
+                  )
               }
             >
 
@@ -5685,60 +6485,66 @@ function ClansPage({
 
       ) : (
 
-        clans.map(row => (
+        clans.map(
+          row => (
 
-          <section
-            className="panel"
-            key={row.id}
-            style={{
-              marginBottom:
-                '16px'
-            }}
-          >
+            <section
+              className="panel"
+              key={
+                row.id
+              }
+              style={{
+                marginBottom:
+                  '16px'
+              }}
+            >
 
-            <div className="panel-head">
+              <div className="panel-head">
 
-              <div>
+                <div>
 
-                <div className="eyebrow">
-                  {row.game_name ||
-                    'CLAN'}
+                  <div className="eyebrow">
+                    {row.game_name ||
+                      'CLAN'}
+                  </div>
+
+                  <h2>
+                    {row.name}
+                  </h2>
+
+                  <span>
+                    Led by{' '}
+                    {row.owner_display_name ||
+                      row.owner_username ||
+                      'Player'}
+                  </span>
+
                 </div>
 
-                <h2>
-                  {row.name}
-                </h2>
-
-                <span>
-                  Led by{' '}
-                  {row.owner_display_name ||
-                    row.owner_username ||
-                    'Player'}
+                <span className="pill">
+                  {row.is_public
+                    ? 'PUBLIC'
+                    : 'PRIVATE'}
                 </span>
 
               </div>
 
-              <span className="pill">
-                {row.is_public
-                  ? 'PUBLIC'
-                  : 'PRIVATE'}
-              </span>
+              <button
+                className="primary"
+                onClick={() =>
+                  openClan(
+                    row
+                  )
+                }
+              >
+                View Clan
+                <ChevronRight size={16} />
+              </button>
 
-            </div>
+            </section>
 
-            <button
-              className="primary"
-              onClick={() =>
-                openClan(row)
-              }
-            >
-              View Clan
-              <ChevronRight size={16} />
-            </button>
-
-          </section>
-
-        ))
+          )
+        )
 
       )}
 
@@ -5754,16 +6560,35 @@ function ClansPage({
 function ActivityFeedPage({
   user
 }) {
-  const [posts, setPosts] =
-    useState([]);
+  const [
+    posts,
+    setPosts
+  ] = useState([]);
 
   const [
     myReactions,
     setMyReactions
   ] = useState([]);
 
-  const [newPost, setNewPost] =
-    useState('');
+  const [
+    newPost,
+    setNewPost
+  ] = useState('');
+
+  const [
+    selectedFile,
+    setSelectedFile
+  ] = useState(null);
+
+  const [
+    previewUrl,
+    setPreviewUrl
+  ] = useState('');
+
+  const [
+    fileInputKey,
+    setFileInputKey
+  ] = useState(0);
 
   const [
     expandedPostId,
@@ -5780,14 +6605,50 @@ function ActivityFeedPage({
     setCommentDrafts
   ] = useState({});
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading
+  ] = useState(true);
 
-  const [busy, setBusy] =
-    useState(false);
+  const [
+    busy,
+    setBusy
+  ] = useState(false);
 
-  const [message, setMessage] =
-    useState('');
+  const [
+    uploading,
+    setUploading
+  ] = useState(false);
+
+  const [
+    message,
+    setMessage
+  ] = useState('');
+
+  useEffect(() => {
+    if (
+      !selectedFile
+    ) {
+      setPreviewUrl('');
+      return;
+    }
+
+    const objectUrl =
+      URL.createObjectURL(
+        selectedFile
+      );
+
+    setPreviewUrl(
+      objectUrl
+    );
+
+    return () => {
+      URL.revokeObjectURL(
+        objectUrl
+      );
+    };
+
+  }, [selectedFile]);
 
   async function load() {
     setLoading(true);
@@ -5798,12 +6659,16 @@ function ActivityFeedPage({
         reactionRows
       ] = await Promise.all([
         getActivityFeed(),
+
         getMyPostReactions(
           user.id
         )
       ]);
 
-      setPosts(feedRows);
+      setPosts(
+        feedRows
+      );
+
       setMyReactions(
         reactionRows
       );
@@ -5829,45 +6694,170 @@ function ActivityFeedPage({
   ) {
     return myReactions.some(
       row =>
-        row.post_id === postId &&
-        row.reaction === reaction
+        row.post_id ===
+          postId &&
+        row.reaction ===
+          reaction
     );
   }
 
-  async function submitPost(e) {
+  function clearSelectedMedia() {
+    setSelectedFile(
+      null
+    );
+
+    setFileInputKey(
+      previous =>
+        previous + 1
+    );
+  }
+
+  function chooseMedia(
+    e
+  ) {
+    const file =
+      e.target.files?.[0];
+
+    setMessage('');
+
+    if (!file) {
+      clearSelectedMedia();
+      return;
+    }
+
+    if (
+      !allowedActivityMediaTypes.includes(
+        file.type
+      )
+    ) {
+      setMessage(
+        'Unsupported file type. Choose a JPG, PNG, WebP, GIF, MP4, WebM, or MOV file.'
+      );
+
+      clearSelectedMedia();
+      return;
+    }
+
+    if (
+      file.size >
+      MAX_ACTIVITY_MEDIA_SIZE
+    ) {
+      setMessage(
+        'That file is larger than the 100 MB limit.'
+      );
+
+      clearSelectedMedia();
+      return;
+    }
+
+    setSelectedFile(
+      file
+    );
+  }
+
+  async function submitPost(
+    e
+  ) {
     e.preventDefault();
 
     setBusy(true);
     setMessage('');
 
+    let uploadedMedia =
+      null;
+
     try {
+      if (
+        !newPost.trim() &&
+        !selectedFile
+      ) {
+        throw new Error(
+          'Write something or choose a photo/clip before posting.'
+        );
+      }
+
+      if (
+        selectedFile
+      ) {
+        setUploading(
+          true
+        );
+
+        uploadedMedia =
+          await uploadActivityMedia({
+            userId:
+              user.id,
+
+            file:
+              selectedFile
+          });
+      }
+
       await createActivityPost({
         userId:
           user.id,
+
         body:
-          newPost
+          newPost,
+
+        mediaUrl:
+          uploadedMedia
+            ?.publicUrl ||
+          null,
+
+        mediaType:
+          uploadedMedia
+            ?.mediaType ||
+          null
       });
 
       setNewPost('');
 
+      clearSelectedMedia();
+
       await load();
 
       setMessage(
-        'Post published.'
+        uploadedMedia
+          ? 'Post and media published.'
+          : 'Post published.'
       );
 
     } catch (error) {
+      if (
+        uploadedMedia
+          ?.path
+      ) {
+        try {
+          await supabase.storage
+            .from(
+              ACTIVITY_MEDIA_BUCKET
+            )
+            .remove([
+              uploadedMedia.path
+            ]);
+        } catch {
+          // Best-effort cleanup.
+        }
+      }
+
       setMessage(
         error.message ||
         'Could not publish post.'
       );
 
     } finally {
+      setUploading(
+        false
+      );
+
       setBusy(false);
     }
   }
 
-  async function removePost(row) {
+  async function removePost(
+    row
+  ) {
     const confirmed =
       window.confirm(
         'Delete this post?'
@@ -5884,6 +6874,23 @@ function ActivityFeedPage({
       await deleteActivityPost(
         row.id
       );
+
+      if (
+        row.media_url
+      ) {
+        try {
+          await removeActivityMedia({
+            mediaUrl:
+              row.media_url,
+
+            userId:
+              user.id
+          });
+        } catch {
+          // Post is already deleted.
+          // Media cleanup can be retried later.
+        }
+      }
 
       if (
         expandedPostId ===
@@ -5928,8 +6935,10 @@ function ActivityFeedPage({
         await removePostReaction({
           postId:
             row.id,
+
           userId:
             user.id,
+
           reaction
         });
 
@@ -5937,8 +6946,10 @@ function ActivityFeedPage({
         await addPostReaction({
           postId:
             row.id,
+
           userId:
             user.id,
+
           reaction
         });
       }
@@ -5956,7 +6967,9 @@ function ActivityFeedPage({
     }
   }
 
-  async function toggleComments(row) {
+  async function toggleComments(
+    row
+  ) {
     if (
       expandedPostId ===
       row.id
@@ -5980,6 +6993,7 @@ function ActivityFeedPage({
       setCommentsByPost(
         previous => ({
           ...previous,
+
           [row.id]:
             comments
         })
@@ -6017,14 +7031,17 @@ function ActivityFeedPage({
 
       await createActivityComment({
         postId,
+
         userId:
           user.id,
+
         body
       });
 
       setCommentDrafts(
         previous => ({
           ...previous,
+
           [postId]:
             ''
         })
@@ -6038,6 +7055,7 @@ function ActivityFeedPage({
       setCommentsByPost(
         previous => ({
           ...previous,
+
           [postId]:
             comments
         })
@@ -6085,6 +7103,7 @@ function ActivityFeedPage({
       setCommentsByPost(
         previous => ({
           ...previous,
+
           [postId]:
             comments
         })
@@ -6155,14 +7174,16 @@ function ActivityFeedPage({
           </h1>
 
           <p>
-            Share updates, react to players, and join the conversation.
+            Share screenshots, gaming clips, stats, wins, and updates.
           </p>
 
         </div>
 
         <button
           className="primary"
-          onClick={load}
+          onClick={
+            load
+          }
           disabled={busy}
         >
           <RefreshCw size={17} />
@@ -6188,7 +7209,7 @@ function ActivityFeedPage({
             </h2>
 
             <span>
-              Share something with FragRank
+              Text, screenshots, or gaming clips
             </span>
 
           </div>
@@ -6208,30 +7229,178 @@ function ActivityFeedPage({
               value={
                 newPost
               }
-              onChange={e =>
-                setNewPost(
-                  e.target.value
-                )
+              onChange={
+                e =>
+                  setNewPost(
+                    e.target.value
+                  )
               }
-              placeholder="What are you playing? Share a win, stat, challenge, or update..."
+              placeholder="What happened in your game?"
               maxLength={1000}
               style={{
-                width: '100%',
-                minHeight: '110px',
-                resize: 'vertical',
+                width:
+                  '100%',
+
+                minHeight:
+                  '110px',
+
+                resize:
+                  'vertical',
+
                 boxSizing:
                   'border-box'
               }}
-              required
             />
           </label>
+
+          <label>
+            Photo or Gaming Clip
+
+            <input
+              key={
+                fileInputKey
+              }
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
+              onChange={
+                chooseMedia
+              }
+            />
+          </label>
+
+          <small
+            style={{
+              display:
+                'block',
+
+              marginBottom:
+                '14px'
+            }}
+          >
+            JPG, PNG, WebP, GIF, MP4, WebM, or MOV. Maximum 100 MB.
+          </small>
+
+          {selectedFile && (
+
+            <div
+              className="panel"
+              style={{
+                marginBottom:
+                  '16px'
+              }}
+            >
+
+              <div className="panel-head">
+
+                <div>
+
+                  <h3>
+                    Media Preview
+                  </h3>
+
+                  <span>
+                    {selectedFile.name} •{' '}
+                    {(
+                      selectedFile.size /
+                      1024 /
+                      1024
+                    ).toFixed(1)} MB
+                  </span>
+
+                </div>
+
+                <button
+                  type="button"
+                  className="iconbtn"
+                  onClick={
+                    clearSelectedMedia
+                  }
+                  disabled={busy}
+                >
+                  <X size={17} />
+                </button>
+
+              </div>
+
+              {activityMediaKind(
+                selectedFile.type
+              ) === 'image' &&
+                previewUrl && (
+
+                <img
+                  src={
+                    previewUrl
+                  }
+                  alt="Post preview"
+                  style={{
+                    display:
+                      'block',
+
+                    width:
+                      '100%',
+
+                    maxHeight:
+                      '520px',
+
+                    objectFit:
+                      'contain',
+
+                    borderRadius:
+                      '14px'
+                  }}
+                />
+
+              )}
+
+              {activityMediaKind(
+                selectedFile.type
+              ) === 'video' &&
+                previewUrl && (
+
+                <video
+                  src={
+                    previewUrl
+                  }
+                  controls
+                  playsInline
+                  preload="metadata"
+                  style={{
+                    display:
+                      'block',
+
+                    width:
+                      '100%',
+
+                    maxHeight:
+                      '520px',
+
+                    borderRadius:
+                      '14px',
+
+                    background:
+                      '#000'
+                  }}
+                />
+
+              )}
+
+            </div>
+
+          )}
 
           <button
             className="primary"
             disabled={busy}
           >
             <Activity size={17} />
-            Publish Post
+
+            {uploading
+              ? 'Uploading Media…'
+              : busy
+              ? 'Publishing…'
+              : selectedFile
+              ? 'Upload & Publish'
+              : 'Publish Post'}
           </button>
 
         </form>
@@ -6266,323 +7435,434 @@ function ActivityFeedPage({
 
       ) : (
 
-        posts.map(row => {
+        posts.map(
+          row => {
 
-          const playerName =
-            row.display_name ||
-            row.username ||
-            'Player';
+            const playerName =
+              row.display_name ||
+              row.username ||
+              'Player';
 
-          const comments =
-            commentsByPost[
-              row.id
-            ] || [];
+            const comments =
+              commentsByPost[
+                row.id
+              ] || [];
 
-          const openComments =
-            expandedPostId ===
-            row.id;
+            const openComments =
+              expandedPostId ===
+              row.id;
 
-          return (
-            <section
-              className="panel"
-              key={row.id}
-              style={{
-                marginBottom:
-                  '16px'
-              }}
-            >
+            const mediaKind =
+              activityMediaKind(
+                row.media_type
+              );
 
-              <div className="friend">
-
-                <div className="avatar">
-                  {playerName
-                    .charAt(0)
-                    .toUpperCase()}
-                </div>
-
-                <div
-                  style={{
-                    flex: 1
-                  }}
-                >
-
-                  <b>
-                    {playerName}
-                  </b>
-
-                  <small>
-                    @{row.username ||
-                      'player'}
-                    {row.title
-                      ? ` • ${row.title}`
-                      : ''}
-                    {' • '}
-                    {formatDateTime(
-                      row.created_at
-                    )}
-                  </small>
-
-                </div>
-
-                {row.user_id ===
-                  user.id && (
-
-                  <button
-                    className="logout"
-                    onClick={() =>
-                      removePost(
-                        row
-                      )
-                    }
-                    disabled={busy}
-                  >
-                    Delete
-                  </button>
-
-                )}
-
-              </div>
-
-              {row.body && (
-                <p
-                  style={{
-                    whiteSpace:
-                      'pre-wrap',
-                    fontSize:
-                      '16px',
-                    lineHeight:
-                      1.6
-                  }}
-                >
-                  {row.body}
-                </p>
-              )}
-
-              {row.media_url && (
-                <div
-                  className="notice"
-                  style={{
-                    marginTop:
-                      '12px'
-                  }}
-                >
-                  Media attached. Image and clip display will be connected in the media-upload update.
-                </div>
-              )}
-
-              <div
+            return (
+              <section
+                className="panel"
+                key={
+                  row.id
+                }
                 style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: '10px',
-                  marginTop:
+                  marginBottom:
                     '16px'
                 }}
               >
 
-                {reactionButton(
-                  row,
-                  'like',
-                  '👍',
-                  'Like',
-                  row.like_count
-                )}
+                <div className="friend">
 
-                {reactionButton(
-                  row,
-                  'fire',
-                  '🔥',
-                  'Fire',
-                  row.fire_count
-                )}
+                  <div className="avatar">
+                    {playerName
+                      .charAt(0)
+                      .toUpperCase()}
+                  </div>
 
-                {reactionButton(
-                  row,
-                  'trophy',
-                  '🏆',
-                  'Trophy',
-                  row.trophy_count
-                )}
+                  <div
+                    style={{
+                      flex:
+                        1
+                    }}
+                  >
 
-                <button
-                  className="linkbtn"
-                  onClick={() =>
-                    toggleComments(
-                      row
-                    )
-                  }
-                  disabled={busy}
-                >
-                  💬 Comments{' '}
-                  {formatNumber(
-                    row.comment_count
-                  )}
-                </button>
+                    <b>
+                      {playerName}
+                    </b>
 
-              </div>
+                    <small>
+                      @{row.username ||
+                        'player'}
 
-              {openComments && (
+                      {row.title
+                        ? ` • ${row.title}`
+                        : ''}
 
-                <div
-                  style={{
-                    marginTop:
-                      '18px'
-                  }}
-                >
+                      {' • '}
 
-                  <div className="panel-head">
-
-                    <div>
-
-                      <h3>
-                        Comments
-                      </h3>
-
-                      <span>
-                        {comments.length} comments
-                      </span>
-
-                    </div>
+                      {formatDateTime(
+                        row.created_at
+                      )}
+                    </small>
 
                   </div>
 
-                  {comments.length ===
-                    0 && (
+                  {row.user_id ===
+                    user.id && (
 
-                    <p className="muted">
-                      No comments yet.
-                    </p>
+                    <button
+                      className="logout"
+                      onClick={() =>
+                        removePost(
+                          row
+                        )
+                      }
+                      disabled={busy}
+                    >
+                      Delete
+                    </button>
 
                   )}
 
-                  {comments.map(
-                    comment => {
+                </div>
 
-                      const commentName =
-                        comment.display_name ||
-                        comment.username ||
-                        'Player';
+                {row.body && (
 
-                      return (
-                        <div
-                          className="friend"
-                          key={
-                            comment.id
-                          }
-                        >
+                  <p
+                    style={{
+                      whiteSpace:
+                        'pre-wrap',
 
-                          <div className="avatar">
-                            {commentName
-                              .charAt(0)
-                              .toUpperCase()}
-                          </div>
+                      fontSize:
+                        '16px',
 
-                          <div
-                            style={{
-                              flex:
-                                1
-                            }}
-                          >
+                      lineHeight:
+                        1.6
+                    }}
+                  >
+                    {row.body}
+                  </p>
 
-                            <b>
-                              {commentName}
-                            </b>
+                )}
 
-                            <small>
-                              @{comment.username ||
-                                'player'} •{' '}
-                              {formatDateTime(
-                                comment.created_at
-                              )}
-                            </small>
+                {row.media_url &&
+                  mediaKind ===
+                    'image' && (
 
-                            <p
-                              style={{
-                                marginBottom:
-                                  0
-                              }}
-                            >
-                              {comment.body}
-                            </p>
-
-                          </div>
-
-                          {comment.user_id ===
-                            user.id && (
-
-                            <button
-                              className="iconbtn"
-                              onClick={() =>
-                                removeComment(
-                                  row.id,
-                                  comment
-                                )
-                              }
-                              disabled={busy}
-                            >
-                              <X size={16} />
-                            </button>
-
-                          )}
-
-                        </div>
-                      );
-                    }
-                  )}
-
-                  <form
-                    onSubmit={e =>
-                      submitComment(
-                        e,
-                        row.id
-                      )
-                    }
+                  <div
                     style={{
                       marginTop:
                         '14px'
                     }}
                   >
 
-                    <label>
-                      Add Comment
+                    <img
+                      src={
+                        row.media_url
+                      }
+                      alt="FragRank post"
+                      loading="lazy"
+                      style={{
+                        display:
+                          'block',
 
-                      <input
-                        value={
-                          commentDrafts[
-                            row.id
-                          ] || ''
-                        }
-                        onChange={e =>
-                          setCommentDrafts(
-                            previous => ({
-                              ...previous,
-                              [row.id]:
-                                e.target.value
-                            })
-                          )
-                        }
-                        placeholder="Write a comment..."
-                        maxLength={500}
-                        required
-                      />
-                    </label>
+                        width:
+                          '100%',
 
-                    <button
-                      className="primary"
-                      disabled={busy}
-                    >
-                      Comment
-                    </button>
+                        maxHeight:
+                          '650px',
 
-                  </form>
+                        objectFit:
+                          'contain',
+
+                        borderRadius:
+                          '14px',
+
+                        background:
+                          'rgba(0,0,0,0.25)'
+                      }}
+                    />
+
+                  </div>
+
+                )}
+
+                {row.media_url &&
+                  mediaKind ===
+                    'video' && (
+
+                  <div
+                    style={{
+                      marginTop:
+                        '14px'
+                    }}
+                  >
+
+                    <video
+                      src={
+                        row.media_url
+                      }
+                      controls
+                      playsInline
+                      preload="metadata"
+                      style={{
+                        display:
+                          'block',
+
+                        width:
+                          '100%',
+
+                        maxHeight:
+                          '650px',
+
+                        borderRadius:
+                          '14px',
+
+                        background:
+                          '#000'
+                      }}
+                    />
+
+                  </div>
+
+                )}
+
+                {row.media_url &&
+                  !mediaKind && (
+
+                  <div
+                    className="notice"
+                    style={{
+                      marginTop:
+                        '14px'
+                    }}
+                  >
+                    This post contains media that your browser cannot preview.
+                  </div>
+
+                )}
+
+                <div
+                  style={{
+                    display:
+                      'flex',
+
+                    flexWrap:
+                      'wrap',
+
+                    gap:
+                      '10px',
+
+                    marginTop:
+                      '16px'
+                  }}
+                >
+
+                  {reactionButton(
+                    row,
+                    'like',
+                    '👍',
+                    'Like',
+                    row.like_count
+                  )}
+
+                  {reactionButton(
+                    row,
+                    'fire',
+                    '🔥',
+                    'Fire',
+                    row.fire_count
+                  )}
+
+                  {reactionButton(
+                    row,
+                    'trophy',
+                    '🏆',
+                    'Trophy',
+                    row.trophy_count
+                  )}
+
+                  <button
+                    className="linkbtn"
+                    onClick={() =>
+                      toggleComments(
+                        row
+                      )
+                    }
+                    disabled={busy}
+                  >
+                    💬 Comments{' '}
+                    {formatNumber(
+                      row.comment_count
+                    )}
+                  </button>
 
                 </div>
 
-              )}
+                {openComments && (
 
-            </section>
-          );
-        })
+                  <div
+                    style={{
+                      marginTop:
+                        '18px'
+                    }}
+                  >
+
+                    <div className="panel-head">
+
+                      <div>
+
+                        <h3>
+                          Comments
+                        </h3>
+
+                        <span>
+                          {comments.length} comments
+                        </span>
+
+                      </div>
+
+                    </div>
+
+                    {comments.length ===
+                      0 && (
+
+                      <p className="muted">
+                        No comments yet.
+                      </p>
+
+                    )}
+
+                    {comments.map(
+                      comment => {
+
+                        const commentName =
+                          comment.display_name ||
+                          comment.username ||
+                          'Player';
+
+                        return (
+                          <div
+                            className="friend"
+                            key={
+                              comment.id
+                            }
+                          >
+
+                            <div className="avatar">
+                              {commentName
+                                .charAt(0)
+                                .toUpperCase()}
+                            </div>
+
+                            <div
+                              style={{
+                                flex:
+                                  1
+                              }}
+                            >
+
+                              <b>
+                                {commentName}
+                              </b>
+
+                              <small>
+                                @{comment.username ||
+                                  'player'} •{' '}
+                                {formatDateTime(
+                                  comment.created_at
+                                )}
+                              </small>
+
+                              <p
+                                style={{
+                                  marginBottom:
+                                    0
+                                }}
+                              >
+                                {comment.body}
+                              </p>
+
+                            </div>
+
+                            {comment.user_id ===
+                              user.id && (
+
+                              <button
+                                className="iconbtn"
+                                onClick={() =>
+                                  removeComment(
+                                    row.id,
+                                    comment
+                                  )
+                                }
+                                disabled={busy}
+                              >
+                                <X size={16} />
+                              </button>
+
+                            )}
+
+                          </div>
+                        );
+                      }
+                    )}
+
+                    <form
+                      onSubmit={
+                        e =>
+                          submitComment(
+                            e,
+                            row.id
+                          )
+                      }
+                      style={{
+                        marginTop:
+                          '14px'
+                      }}
+                    >
+
+                      <label>
+                        Add Comment
+
+                        <input
+                          value={
+                            commentDrafts[
+                              row.id
+                            ] || ''
+                          }
+                          onChange={
+                            e =>
+                              setCommentDrafts(
+                                previous => ({
+                                  ...previous,
+
+                                  [row.id]:
+                                    e.target.value
+                                })
+                              )
+                          }
+                          placeholder="Write a comment..."
+                          maxLength={500}
+                          required
+                        />
+                      </label>
+
+                      <button
+                        className="primary"
+                        disabled={busy}
+                      >
+                        Comment
+                      </button>
+
+                    </form>
+
+                  </div>
+
+                )}
+
+              </section>
+            );
+          }
+        )
 
       )}
 
@@ -6599,14 +7879,20 @@ function FriendsPage({
   user,
   openFriend
 }) {
-  const [friends, setFriends] =
-    useState([]);
+  const [
+    friends,
+    setFriends
+  ] = useState([]);
 
-  const [incoming, setIncoming] =
-    useState([]);
+  const [
+    incoming,
+    setIncoming
+  ] = useState([]);
 
-  const [outgoing, setOutgoing] =
-    useState([]);
+  const [
+    outgoing,
+    setOutgoing
+  ] = useState([]);
 
   const [
     searchText,
@@ -6618,11 +7904,15 @@ function FriendsPage({
     setSearchResults
   ] = useState([]);
 
-  const [message, setMessage] =
-    useState('');
+  const [
+    message,
+    setMessage
+  ] = useState('');
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading
+  ] = useState(true);
 
   async function loadFriends() {
     setLoading(true);
@@ -6660,7 +7950,9 @@ function FriendsPage({
     loadFriends();
   }, [user.id]);
 
-  async function runSearch(e) {
+  async function runSearch(
+    e
+  ) {
     e.preventDefault();
 
     setMessage('');
@@ -6684,7 +7976,9 @@ function FriendsPage({
     }
   }
 
-  async function addFriend(profile) {
+  async function addFriend(
+    profile
+  ) {
     try {
       await sendFriendRequest(
         user.id,
@@ -6770,23 +8064,32 @@ function FriendsPage({
         </div>
 
         <form
-          onSubmit={runSearch}
+          onSubmit={
+            runSearch
+          }
           style={{
-            display: 'flex',
-            gap: '10px'
+            display:
+              'flex',
+
+            gap:
+              '10px'
           }}
         >
 
           <input
-            value={searchText}
-            onChange={e =>
-              setSearchText(
-                e.target.value
-              )
+            value={
+              searchText
+            }
+            onChange={
+              e =>
+                setSearchText(
+                  e.target.value
+                )
             }
             placeholder="Search players..."
             style={{
-              flex: 1
+              flex:
+                1
             }}
           />
 
@@ -6801,54 +8104,61 @@ function FriendsPage({
           <div
             className="notice"
             style={{
-              marginTop: '15px'
+              marginTop:
+                '15px'
             }}
           >
             {message}
           </div>
         )}
 
-        {searchResults.map(profile => (
+        {searchResults.map(
+          profile => (
 
-          <div
-            className="friend"
-            key={profile.id}
-          >
-
-            <div className="avatar">
-              {(
-                profile.display_name ||
-                profile.username ||
-                'P'
-              )[0].toUpperCase()}
-            </div>
-
-            <div>
-
-              <b>
-                {profile.display_name ||
-                  profile.username}
-              </b>
-
-              <small>
-                @{profile.username}
-              </small>
-
-            </div>
-
-            <button
-              className="primary"
-              onClick={() =>
-                addFriend(profile)
+            <div
+              className="friend"
+              key={
+                profile.id
               }
             >
-              <UserPlus size={16} />
-              Add
-            </button>
 
-          </div>
+              <div className="avatar">
+                {(
+                  profile.display_name ||
+                  profile.username ||
+                  'P'
+                )[0].toUpperCase()}
+              </div>
 
-        ))}
+              <div>
+
+                <b>
+                  {profile.display_name ||
+                    profile.username}
+                </b>
+
+                <small>
+                  @{profile.username}
+                </small>
+
+              </div>
+
+              <button
+                className="primary"
+                onClick={() =>
+                  addFriend(
+                    profile
+                  )
+                }
+              >
+                <UserPlus size={16} />
+                Add
+              </button>
+
+            </div>
+
+          )
+        )}
 
       </section>
 
@@ -6868,65 +8178,69 @@ function FriendsPage({
 
           </div>
 
-          {incoming.map(item => {
+          {incoming.map(
+            item => {
 
-            const friendProfile =
-              item.profile;
+              const friendProfile =
+                item.profile;
 
-            return (
-              <div
-                className="friend"
-                key={item.friendshipId}
-              >
-
-                <div className="avatar">
-                  {(
-                    friendProfile.display_name ||
-                    friendProfile.username
-                  )[0].toUpperCase()}
-                </div>
-
-                <div>
-
-                  <b>
-                    {friendProfile.display_name ||
-                      friendProfile.username}
-                  </b>
-
-                  <small>
-                    @{friendProfile.username}
-                  </small>
-
-                </div>
-
-                <button
-                  className="primary"
-                  onClick={() =>
-                    respond(
-                      item.friendshipId,
-                      'accepted'
-                    )
+              return (
+                <div
+                  className="friend"
+                  key={
+                    item.friendshipId
                   }
                 >
-                  <Check size={16} />
-                  Accept
-                </button>
 
-                <button
-                  className="iconbtn"
-                  onClick={() =>
-                    respond(
-                      item.friendshipId,
-                      'rejected'
-                    )
-                  }
-                >
-                  <X size={16} />
-                </button>
+                  <div className="avatar">
+                    {(
+                      friendProfile.display_name ||
+                      friendProfile.username
+                    )[0].toUpperCase()}
+                  </div>
 
-              </div>
-            );
-          })}
+                  <div>
+
+                    <b>
+                      {friendProfile.display_name ||
+                        friendProfile.username}
+                    </b>
+
+                    <small>
+                      @{friendProfile.username}
+                    </small>
+
+                  </div>
+
+                  <button
+                    className="primary"
+                    onClick={() =>
+                      respond(
+                        item.friendshipId,
+                        'accepted'
+                      )
+                    }
+                  >
+                    <Check size={16} />
+                    Accept
+                  </button>
+
+                  <button
+                    className="iconbtn"
+                    onClick={() =>
+                      respond(
+                        item.friendshipId,
+                        'rejected'
+                      )
+                    }
+                  >
+                    <X size={16} />
+                  </button>
+
+                </div>
+              );
+            }
+          )}
 
         </section>
 
@@ -6960,57 +8274,68 @@ function FriendsPage({
 
         ) : (
 
-          friends.map(item => {
+          friends.map(
+            item => {
 
-            const friendProfile =
-              item.profile;
+              const friendProfile =
+                item.profile;
 
-            return (
-              <button
-                key={item.friendshipId}
-                style={{
-                  all: 'unset',
-                  display: 'block',
-                  width: '100%',
-                  cursor: 'pointer'
-                }}
-                onClick={() =>
-                  openFriend(
-                    friendProfile,
+              return (
+                <button
+                  key={
                     item.friendshipId
-                  )
-                }
-              >
+                  }
+                  style={{
+                    all:
+                      'unset',
 
-                <div className="friend">
+                    display:
+                      'block',
 
-                  <div className="avatar">
-                    {(
-                      friendProfile.display_name ||
-                      friendProfile.username
-                    )[0].toUpperCase()}
+                    width:
+                      '100%',
+
+                    cursor:
+                      'pointer'
+                  }}
+                  onClick={() =>
+                    openFriend(
+                      friendProfile,
+                      item.friendshipId
+                    )
+                  }
+                >
+
+                  <div className="friend">
+
+                    <div className="avatar">
+                      {(
+                        friendProfile.display_name ||
+                        friendProfile.username
+                      )[0].toUpperCase()}
+                    </div>
+
+                    <div>
+
+                      <b>
+                        {friendProfile.display_name ||
+                          friendProfile.username}
+                      </b>
+
+                      <small>
+                        @{friendProfile.username}
+                      </small>
+
+                    </div>
+
+                    <ChevronRight size={18} />
+
                   </div>
 
-                  <div>
-
-                    <b>
-                      {friendProfile.display_name ||
-                        friendProfile.username}
-                    </b>
-
-                    <small>
-                      @{friendProfile.username}
-                    </small>
-
-                  </div>
-
-                  <ChevronRight size={18} />
-
-                </div>
-
-              </button>
-            );
-          })
+                </button>
+              );
+            }
+          )
 
         )}
 
@@ -7026,36 +8351,40 @@ function FriendsPage({
             </h2>
           </div>
 
-          {outgoing.map(item => (
+          {outgoing.map(
+            item => (
 
-            <div
-              className="friend"
-              key={item.friendshipId}
-            >
+              <div
+                className="friend"
+                key={
+                  item.friendshipId
+                }
+              >
 
-              <div className="avatar">
-                {(
-                  item.profile.display_name ||
-                  item.profile.username
-                )[0].toUpperCase()}
+                <div className="avatar">
+                  {(
+                    item.profile.display_name ||
+                    item.profile.username
+                  )[0].toUpperCase()}
+                </div>
+
+                <div>
+
+                  <b>
+                    {item.profile.display_name ||
+                      item.profile.username}
+                  </b>
+
+                  <small>
+                    Pending
+                  </small>
+
+                </div>
+
               </div>
 
-              <div>
-
-                <b>
-                  {item.profile.display_name ||
-                    item.profile.username}
-                </b>
-
-                <small>
-                  Pending
-                </small>
-
-              </div>
-
-            </div>
-
-          ))}
+            )
+          )}
 
         </section>
 
@@ -7080,11 +8409,15 @@ function FriendProfile({
     setGameStats
   ] = useState([]);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading
+  ] = useState(true);
 
-  const [message, setMessage] =
-    useState('');
+  const [
+    message,
+    setMessage
+  ] = useState('');
 
   useEffect(() => {
 
@@ -7095,7 +8428,9 @@ function FriendProfile({
             profile.id
           );
 
-        setGameStats(stats);
+        setGameStats(
+          stats
+        );
 
       } catch (error) {
         setMessage(
@@ -7249,11 +8584,86 @@ function FriendProfile({
 
       </div>
 
+      <section className="panel">
+
+        <div className="panel-head">
+          <h2>
+            Game Stats
+          </h2>
+        </div>
+
+        {gameStats.length === 0 ? (
+
+          <p className="muted">
+            No game stats available yet.
+          </p>
+
+        ) : (
+
+          <div className="gamegrid">
+
+            {gameStats.map(
+              game => (
+
+                <div
+                  className="gamecard"
+                  key={
+                    game.id
+                  }
+                >
+
+                  <div className="glogo">
+                    {game.short}
+                  </div>
+
+                  <div>
+
+                    <b>
+                      {game.name}
+                    </b>
+
+                    <small>
+                      {formatNumber(
+                        game.games
+                      )} games •{' '}
+                      {formatNumber(
+                        game.wins
+                      )} wins
+                    </small>
+
+                  </div>
+
+                  <div className="kpg">
+
+                    <b>
+                      {formatDecimal(
+                        game.kpg
+                      )}
+                    </b>
+
+                    <small>
+                      KPG
+                    </small>
+
+                  </div>
+
+                </div>
+
+              )
+            )}
+
+          </div>
+
+        )}
+
+      </section>
+
       <button
         className="logout"
         onClick={remove}
         style={{
-          marginTop: '20px'
+          marginTop:
+            '20px'
         }}
       >
         Remove Friend
@@ -7278,33 +8688,47 @@ function ProfileSettings({
     setDisplayName
   ] = useState('');
 
-  const [bio, setBio] =
-    useState('');
+  const [
+    bio,
+    setBio
+  ] = useState('');
 
-  const [title, setTitle] =
-    useState('');
+  const [
+    title,
+    setTitle
+  ] = useState('');
 
-  const [saving, setSaving] =
-    useState(false);
+  const [
+    saving,
+    setSaving
+  ] = useState(false);
 
-  const [message, setMessage] =
-    useState('');
+  const [
+    message,
+    setMessage
+  ] = useState('');
 
   useEffect(() => {
     setDisplayName(
-      profile?.display_name || ''
+      profile?.display_name ||
+      ''
     );
 
     setBio(
-      profile?.bio || ''
+      profile?.bio ||
+      ''
     );
 
     setTitle(
-      profile?.title || ''
+      profile?.title ||
+      ''
     );
+
   }, [profile]);
 
-  async function saveProfile(e) {
+  async function saveProfile(
+    e
+  ) {
     e.preventDefault();
 
     setSaving(true);
@@ -7317,7 +8741,9 @@ function ProfileSettings({
           {
             display_name:
               displayName,
+
             bio,
+
             title
           }
         );
@@ -7366,14 +8792,19 @@ function ProfileSettings({
 
       <section className="panel">
 
-        <form onSubmit={saveProfile}>
+        <form
+          onSubmit={
+            saveProfile
+          }
+        >
 
           <label>
             Username
 
             <input
               value={
-                profile?.username || ''
+                profile?.username ||
+                ''
               }
               disabled
             />
@@ -7383,11 +8814,14 @@ function ProfileSettings({
             Display Name
 
             <input
-              value={displayName}
-              onChange={e =>
-                setDisplayName(
-                  e.target.value
-                )
+              value={
+                displayName
+              }
+              onChange={
+                e =>
+                  setDisplayName(
+                    e.target.value
+                  )
               }
             />
           </label>
@@ -7396,12 +8830,16 @@ function ProfileSettings({
             Player Title
 
             <input
-              value={title}
-              onChange={e =>
-                setTitle(
-                  e.target.value
-                )
+              value={
+                title
               }
+              onChange={
+                e =>
+                  setTitle(
+                    e.target.value
+                  )
+              }
+              placeholder="Example: FragRank Founder"
             />
           </label>
 
@@ -7409,11 +8847,14 @@ function ProfileSettings({
             Bio
 
             <input
-              value={bio}
-              onChange={e =>
-                setBio(
-                  e.target.value
-                )
+              value={
+                bio
+              }
+              onChange={
+                e =>
+                  setBio(
+                    e.target.value
+                  )
               }
             />
           </label>
@@ -7449,19 +8890,25 @@ function ProfileSettings({
 ========================================================= */
 
 function App() {
-  const [session, setSession] =
-    useState(null);
+  const [
+    session,
+    setSession
+  ] = useState(null);
 
-  const [profile, setProfile] =
-    useState(null);
+  const [
+    profile,
+    setProfile
+  ] = useState(null);
 
   const [
     gameStats,
     setGameStats
   ] = useState([]);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading
+  ] = useState(true);
 
   const [
     statsLoading,
@@ -7473,8 +8920,12 @@ function App() {
     setStatsError
   ] = useState('');
 
-  const [page, setPage] =
-    useState('dashboard');
+  const [
+    page,
+    setPage
+  ] = useState(
+    'dashboard'
+  );
 
   const [
     selectedGame,
@@ -7491,13 +8942,20 @@ function App() {
     setSelectedFriendshipId
   ] = useState(null);
 
-  const [open, setOpen] =
-    useState(false);
+  const [
+    open,
+    setOpen
+  ] = useState(false);
 
-  async function loadPlayerData(user) {
+  async function loadPlayerData(
+    user
+  ) {
     if (!user) return;
 
-    setStatsLoading(true);
+    setStatsLoading(
+      true
+    );
+
     setStatsError('');
 
     try {
@@ -7526,12 +8984,15 @@ function App() {
       );
 
     } finally {
-      setStatsLoading(false);
+      setStatsLoading(
+        false
+      );
     }
   }
 
   useEffect(() => {
-    let alive = true;
+    let alive =
+      true;
 
     async function start() {
       try {
@@ -7541,16 +9002,21 @@ function App() {
               currentSession
           }
         } =
-          await supabase.auth.getSession();
+          await supabase
+            .auth
+            .getSession();
 
-        if (!alive) return;
+        if (!alive) {
+          return;
+        }
 
         setSession(
           currentSession
         );
 
         if (
-          currentSession?.user
+          currentSession
+            ?.user
         ) {
           await loadPlayerData(
             currentSession.user
@@ -7559,7 +9025,9 @@ function App() {
 
       } finally {
         if (alive) {
-          setLoading(false);
+          setLoading(
+            false
+          );
         }
       }
     }
@@ -7571,33 +9039,49 @@ function App() {
         subscription
       }
     } =
-      supabase.auth.onAuthStateChange(
-        (_event, nextSession) => {
-
-          setSession(
+      supabase.auth
+        .onAuthStateChange(
+          (
+            _event,
             nextSession
-          );
+          ) => {
 
-          if (
-            nextSession?.user
-          ) {
-            setTimeout(() => {
-              loadPlayerData(
-                nextSession.user
+            setSession(
+              nextSession
+            );
+
+            if (
+              nextSession
+                ?.user
+            ) {
+              setTimeout(
+                () => {
+                  loadPlayerData(
+                    nextSession.user
+                  );
+                },
+                0
               );
-            }, 0);
 
-          } else {
-            setProfile(null);
-            setGameStats([]);
+            } else {
+              setProfile(
+                null
+              );
+
+              setGameStats(
+                []
+              );
+            }
+
           }
-
-        }
-      );
+        );
 
     return () => {
-      alive = false;
-      subscription.unsubscribe();
+      alive =
+        false;
+
+      subscription
+        .unsubscribe();
     };
 
   }, []);
@@ -7620,7 +9104,9 @@ function App() {
   }
 
   if (!session) {
-    return <Auth />;
+    return (
+      <Auth />
+    );
   }
 
   const displayName =
@@ -7628,13 +9114,23 @@ function App() {
     profile?.username ||
     'Player';
 
-  function openGame(game) {
-    setSelectedGame(game);
-    setPage('game-detail');
+  function openGame(
+    game
+  ) {
+    setSelectedGame(
+      game
+    );
+
+    setPage(
+      'game-detail'
+    );
 
     window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
+      top:
+        0,
+
+      behavior:
+        'smooth'
     });
   }
 
@@ -7642,7 +9138,9 @@ function App() {
     friend,
     friendshipId
   ) {
-    setSelectedFriend(friend);
+    setSelectedFriend(
+      friend
+    );
 
     setSelectedFriendshipId(
       friendshipId
@@ -7653,43 +9151,115 @@ function App() {
     );
 
     window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
+      top:
+        0,
+
+      behavior:
+        'smooth'
     });
   }
 
   const nav = [
-    ['dashboard', 'Overview', Home],
-    ['profile', 'Profile', User],
-    ['stats', 'My Stats', BarChart3],
-    ['friends', 'Friends', Users],
-    ['leaderboard', 'Leaderboard', Globe2],
-    ['achievements', 'Achievements', Award],
-    ['challenges', 'Challenges', Zap],
-    ['tournaments', 'Tournaments', Trophy],
-    ['clans', 'Clans', Shield],
-    ['activity', 'Activity', Activity]
+    [
+      'dashboard',
+      'Overview',
+      Home
+    ],
+
+    [
+      'profile',
+      'Profile',
+      User
+    ],
+
+    [
+      'stats',
+      'My Stats',
+      BarChart3
+    ],
+
+    [
+      'friends',
+      'Friends',
+      Users
+    ],
+
+    [
+      'leaderboard',
+      'Leaderboard',
+      Globe2
+    ],
+
+    [
+      'achievements',
+      'Achievements',
+      Award
+    ],
+
+    [
+      'challenges',
+      'Challenges',
+      Zap
+    ],
+
+    [
+      'tournaments',
+      'Tournaments',
+      Trophy
+    ],
+
+    [
+      'clans',
+      'Clans',
+      Shield
+    ],
+
+    [
+      'activity',
+      'Activity',
+      Activity
+    ]
   ];
 
   const pages = {
 
     dashboard: (
       <Dashboard
-        setPage={setPage}
-        openGame={openGame}
-        user={session.user}
-        profile={profile}
-        totals={totals}
-        gameStats={gameStats}
-        statsLoading={statsLoading}
-        statsError={statsError}
+        setPage={
+          setPage
+        }
+        openGame={
+          openGame
+        }
+        user={
+          session.user
+        }
+        profile={
+          profile
+        }
+        totals={
+          totals
+        }
+        gameStats={
+          gameStats
+        }
+        statsLoading={
+          statsLoading
+        }
+        statsError={
+          statsError
+        }
       />
     ),
 
     profile: (
       <ProfileSettings
-        user={session.user}
-        profile={profile}
+        user={
+          session.user
+        }
+        profile={
+          profile
+        }
         onProfileUpdated={
           setProfile
         }
@@ -7698,40 +9268,67 @@ function App() {
 
     stats: (
       <Stats
-        totals={totals}
-        gameStats={gameStats}
-        openGame={openGame}
+        totals={
+          totals
+        }
+        gameStats={
+          gameStats
+        }
+        openGame={
+          openGame
+        }
       />
     ),
 
     'game-detail': (
       <GameDetail
-        game={selectedGame}
+        game={
+          selectedGame
+        }
         back={() => {
-          setPage('stats');
-          setSelectedGame(null);
+          setPage(
+            'stats'
+          );
+
+          setSelectedGame(
+            null
+          );
         }}
       />
     ),
 
     friends: (
       <FriendsPage
-        user={session.user}
-        openFriend={openFriend}
+        user={
+          session.user
+        }
+        openFriend={
+          openFriend
+        }
       />
     ),
 
     'friend-profile': (
       selectedFriend ? (
         <FriendProfile
-          profile={selectedFriend}
+          profile={
+            selectedFriend
+          }
           friendshipId={
             selectedFriendshipId
           }
           back={() => {
-            setSelectedFriend(null);
-            setSelectedFriendshipId(null);
-            setPage('friends');
+            setSelectedFriend(
+              null
+            );
+
+            setSelectedFriendshipId(
+              null
+            );
+
+            setPage(
+              'friends'
+            );
           }}
         />
       ) : null
@@ -7747,32 +9344,44 @@ function App() {
 
     achievements: (
       <AchievementsPage
-        user={session.user}
-        totals={totals}
+        user={
+          session.user
+        }
+        totals={
+          totals
+        }
       />
     ),
 
     challenges: (
       <ChallengesPage
-        user={session.user}
+        user={
+          session.user
+        }
       />
     ),
 
     tournaments: (
       <TournamentsPage
-        user={session.user}
+        user={
+          session.user
+        }
       />
     ),
 
     clans: (
       <ClansPage
-        user={session.user}
+        user={
+          session.user
+        }
       />
     ),
 
     activity: (
       <ActivityFeedPage
-        user={session.user}
+        user={
+          session.user
+        }
       />
     )
 
@@ -7783,7 +9392,9 @@ function App() {
 
       <aside
         className={`sidebar ${
-          open ? 'open' : ''
+          open
+            ? 'open'
+            : ''
         }`}
       >
 
@@ -7800,7 +9411,9 @@ function App() {
           <button
             className="iconbtn close"
             onClick={() =>
-              setOpen(false)
+              setOpen(
+                false
+              )
             }
           >
             <X />
@@ -7815,10 +9428,18 @@ function App() {
         <nav>
 
           {nav.map(
-            ([id, label, Icon]) => (
+            (
+              [
+                id,
+                label,
+                Icon
+              ]
+            ) => (
 
               <button
-                key={id}
+                key={
+                  id
+                }
                 className={
                   page === id
                     ? 'active'
@@ -7826,16 +9447,27 @@ function App() {
                 }
                 onClick={() => {
 
-                  setPage(id);
+                  setPage(
+                    id
+                  );
 
-                  setSelectedGame(null);
-                  setSelectedFriend(null);
+                  setSelectedGame(
+                    null
+                  );
 
-                  setOpen(false);
+                  setSelectedFriend(
+                    null
+                  );
+
+                  setOpen(
+                    false
+                  );
                 }}
               >
 
-                <Icon size={18} />
+                <Icon
+                  size={18}
+                />
 
                 {label}
 
@@ -7874,7 +9506,9 @@ function App() {
 
         <button
           className="logout"
-          onClick={signOut}
+          onClick={
+            signOut
+          }
         >
           <LogOut size={17} />
           Sign out
@@ -7889,7 +9523,9 @@ function App() {
           <button
             className="iconbtn menu"
             onClick={() =>
-              setOpen(true)
+              setOpen(
+                true
+              )
             }
           >
             <Menu />
@@ -7914,7 +9550,9 @@ function App() {
             <button
               className="iconbtn"
               onClick={() =>
-                setPage('profile')
+                setPage(
+                  'profile'
+                )
               }
             >
               <Settings size={18} />
@@ -7934,7 +9572,9 @@ function App() {
 
 
 createRoot(
-  document.getElementById('root')
+  document.getElementById(
+    'root'
+  )
 ).render(
   <App />
 );
